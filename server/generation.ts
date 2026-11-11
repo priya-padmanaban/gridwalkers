@@ -10,8 +10,10 @@ export function generateAsync(settings: Settings, progress: (value: number) => v
     ms: Number(process.env.GENERATION_MS) || 4500,
   };
   return new Promise((resolvePuzzle, reject) => {
-    const worker = new Worker(process.env.VERCEL
-      ? resolve('server-build/generation-worker.cjs') : new URL('./generation-worker.ts', import.meta.url), {
+    const workerPath = process.env.VERCEL
+      ? 'server-build/generation-worker.cjs'
+      : 'server/generation-worker.ts';
+    const worker = new Worker(resolve(workerPath), {
       workerData: { settings, limits }, resourceLimits: { maxOldGenerationSizeMb: 64, maxYoungGenerationSizeMb: 16 },
     });
     const timeout = setTimeout(() => {

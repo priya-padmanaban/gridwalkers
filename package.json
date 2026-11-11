@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "concurrently -k \"node --env-file-if-exists=.env --watch server/index.ts\" \"vite --host 127.0.0.1\"",
-    "build": "tsc --noEmit && esbuild server/generation-worker.ts --bundle --platform=node --outfile=server-build/generation-worker.cjs && vite build",
+    "build": "tsc --noEmit && esbuild server/socket.ts server/generation-worker.ts --bundle --platform=node --outdir=server-build --out-extension:.js=.cjs && vite build",
     "start": "node --env-file-if-exists=.env server/index.ts",
     "test": "vitest run",
     "test:e2e": "playwright test"
