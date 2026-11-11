@@ -241,6 +241,10 @@ function App() {
     setInvite('');
     setDialog(undefined);
   }
+  function requestLeave() {
+    if (playing) setDialog('leave');
+    else leave();
+  }
   function stay() {
     setDialog(undefined);
     requestAnimationFrame(() => controls.current?.focus());
@@ -319,10 +323,7 @@ function App() {
   const activeCount = room?.players.filter(player => player.connected).length ?? 0;
   return <div className="app-shell" data-theme={dark ? 'dark' : 'light'} data-reduced-motion={reduced || undefined}>
     <header className="header"><div className="header-inner">
-      <button type="button" className="brand-button" onClick={() => {
-        if (playing) setDialog('leave');
-        else leave();
-      }}><Logo/></button>
+      <button type="button" className="brand-button" onClick={requestLeave}><Logo/></button>
       {room && <div className="top-meta"><span className="room-tag">{isSolo ? 'Solo' : room.code}</span>
         {(playing || showResult || isSolo) && <><Timer start={room.startedAt} finish={room.finishedAt}/><span>{room.settings.width} × {room.settings.height}</span><span>{cap(room.settings.difficulty)}</span></>}
         {!isSolo && <span><i className="presence online"/> {activeCount}/4 online</span>}
@@ -330,7 +331,8 @@ function App() {
       <div className="header-actions"><button type="button" className="header-button" aria-pressed={dark} onClick={() => theme(!dark)}>Dark mode</button>
       <button className="header-button" onClick={room ? openSettings : () => setDialog('profile')}>
         {room ? <><span aria-hidden="true">⚙</span> Settings</> : <><Avatar profile={profile} size={26}/> My character</>}
-      </button></div>
+      </button>
+      {room && !isSolo && <button type="button" className="header-button" onClick={requestLeave}>Leave room</button>}</div>
     </div></header>
 
     {!room && <main className="landing">
@@ -451,7 +453,7 @@ function App() {
         <label><input type="checkbox" checked={!muted} onChange={e => { setMuted(!e.target.checked); localStorage.setItem('gridwalkers:mute', String(!e.target.checked)); }}/> Play completion sound</label>
         <label><input type="checkbox" checked={reduced} onChange={e => setReduced(e.target.checked)}/> Reduce motion</label>
       </div>
-      <div className="settings-actions"><button onClick={() => setDialog('profile')}>Edit character</button><button onClick={leave}>{isSolo ? 'Back to Home' : 'Leave room'}</button></div>
+      <div className="settings-actions"><button onClick={() => setDialog('profile')}>Edit character</button>{isSolo && <button onClick={leave}>Back to Home</button>}</div>
       {error && <p className="error" role="alert">{error}</p>}
     </Dialog>}
     {result && ((showResult && !dialog) || dialog === 'result') && <Dialog

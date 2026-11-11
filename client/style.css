@@ -177,7 +177,7 @@ dialog::backdrop { background: #1c3b2f85; backdrop-filter: blur(3px); }
   .header-inner { padding: 0 22px; }
 }
 @media (max-width: 700px) {
-  .header-inner { min-height: 62px; padding: 0 14px; }
+  .header-inner { min-height: 62px; padding: 8px 14px; flex-wrap: wrap; }
   .hero, .lobby-grid, .game-grid { grid-template-columns: 1fr; }
   .example-board { width: min(100%, 390px); }
   .game { padding: 10px; }

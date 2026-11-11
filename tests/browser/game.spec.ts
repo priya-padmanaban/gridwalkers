@@ -32,6 +32,8 @@ test('two walkers customize, join via invite, mark together, and share a victory
     const board = host.getByLabel(/Nonogram board/);
     await expect(board).toBeVisible();
     await expect(guest.getByLabel(/Nonogram board/)).toBeVisible();
+    await host.getByRole('button', { name: 'Leave room' }).click();
+    await host.getByRole('dialog', { name: 'Leave game?' }).getByRole('button', { name: 'Keep playing' }).click();
     const room = (await store.read(code))!;
     const player = room.sessions.find(session => session.player.profile.name === 'Fern')!.player;
     await board.press(player.position.x < 4 ? 'ArrowRight' : 'a', { delay: 150 });
@@ -106,7 +108,7 @@ test('two walkers customize, join via invite, mark together, and share a victory
     await expect(guest.getByRole('img', { name: 'Final puzzle board' })).toBeVisible();
     await guest.getByRole('button', { name: 'Return to Lobby' }).click();
 
-    await host.getByRole('button', { name: 'Gridwalkers' }).click();
+    await host.getByRole('button', { name: 'Leave room' }).click();
     await expect(host.getByRole('button', { name: 'Play Solo' })).toBeVisible();
     await expect(guest.getByRole('button', { name: 'Start Game' })).toBeEnabled();
     await expect(guest.getByRole('button', { name: 'Regenerate' })).toBeEnabled();
