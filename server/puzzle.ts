@@ -1,16 +1,9 @@
 import type { Difficulty, Settings } from '../shared/protocol.ts';
+import { clues } from '../shared/clues.ts';
+export { clues } from '../shared/clues.ts';
 
 export type Puzzle = { solution: number[]; rows: number[][]; columns: number[][] };
 export type Metrics = { passes: number; initial: number; deductions: number; revealed: number[]; slow: number; chain: number };
-export function clues(line: number[]): number[] {
-  const runs: number[] = [];
-  let length = 0;
-  for (const cell of [...line, 0]) {
-    if (cell === 1) length++;
-    else if (length) { runs.push(length); length = 0; }
-  }
-  return runs.length ? runs : [0];
-}
 
 export function describe(solution: number[], width: number, height: number): Puzzle {
   return {

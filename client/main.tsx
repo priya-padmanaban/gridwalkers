@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
+import { clues } from '../shared/clues.ts';
 import { accessories, defaultProfile, defaultSettings, difficulties, hairColors, shirts, skins, styles } from '../shared/protocol.ts';
 import type { Direction, Line, Mark, Profile, Result, Settings, Snapshot } from '../shared/protocol.ts';
 import { Avatar } from './sprite.tsx';
@@ -75,26 +76,29 @@ function Customize({ profile, save, joining }: { profile: Profile; save(profile:
   </form>;
 }
 
-const butterfly = [
-  '...............', '.gg.........gg.', 'gggg.......gggg', 'gssgg.....ggssg', 'gsssgg...ggsssg', '.gsggg.g.gggsg.',
-  '..ggggggggggg..', '...ggg.g.ggg...', '..ggsgggggsgg..', '.ggssg.g.gssgg.', '.gssgg.g.ggssg.', '..ggg.....ggg..',
-  '...g.......g...', '...............', '...............',
-];
+const example = [
+  '1100000111', '1100000111', '1100000111', '1000010110', '0000111110',
+  '0000110010', '0000010000', '0000000000', '0000000111', '0000001111',
+].map(row => Array.from(row, Number));
+const exampleRows = example.map(clues);
+const exampleColumns = example[0].map((_, x) => clues(example.map(row => row[x])));
+
 function Preview() {
-  return <div className="artwork" aria-hidden="true">
-    <div className="art-paper">
-      <div className="art-title"><span><i/> FIELD NOTES</span><span>15 × 15</span></div>
-      <div className="art-grid-wrap">
-        <div className="art-top">{[3,4,5,5,7,3,1,6,1,3,7,5,5,4,3].map((n, i) => <span key={i}>{n}</span>)}</div>
-        <div className="art-left">{[0,2,4,5,6,1,11,3,5,5,5,3,1,0,0].map((n, i) => <span key={i}>{n}</span>)}</div>
-        <div className="art-grid">{butterfly.flatMap((row, y) => Array.from(row, (mark, x) => <i key={y * 15 + x}
-          className={(mark === '.' ? (x + y * 3) % 11 === 0 ? 'art-cross' : '' : mark === 'g' ? 'art-fill' : 'art-light') + (x % 5 === 4 ? ' art-v' : '') + (y % 5 === 4 ? ' art-h' : '')}/>))}</div>
-        <div className="art-player art-player-one"><span>Fern</span><Avatar size={43} profile={{ ...defaultProfile, accessory: 1 }}/></div>
-        <div className="art-player art-player-two"><span>Pip</span><Avatar size={43} profile={{ ...defaultProfile, skin: 1, shirt: 2, hair: 1, style: 2 }}/></div>
+  return <figure className="example-board">
+    <div className="example-layout" role="img" aria-label="Solved 10 by 10 nonogram with an abstract pattern">
+      <div className="example-columns" aria-hidden="true">
+        {exampleColumns.map((line, x) => <div key={x}>{line.map((n, i) => <span key={i}>{n}</span>)}</div>)}
+      </div>
+      <div className="example-rows" aria-hidden="true">
+        {exampleRows.map((line, y) => <div key={y}>{line.map((n, i) => <span key={i}>{n}</span>)}</div>)}
+      </div>
+      <div className="example-cells" aria-hidden="true">
+        {example.flatMap((row, y) => row.map((filled, x) =>
+          <i key={y * 10 + x} className={filled ? 'filled' : undefined}/>))}
       </div>
     </div>
-    <span className="spark spark-one">✦</span><span className="spark spark-two">✧</span><span className="spark spark-three">✦</span>
-  </div>;
+    <figcaption>Example puzzle <span>10 × 10</span></figcaption>
+  </figure>;
 }
 function Players({ room, id }: { room: Snapshot; id: string }) {
   return <ul className="players">
@@ -271,15 +275,14 @@ function App() {
     {!room && <main className="landing">
       <section className="hero">
         <div className="hero-copy">
-          <div className="hero-tag"><span aria-hidden="true">✦</span> CO-OP NONOGRAM · 1–4 PLAYERS</div>
-          <h1>Little steps.<br/><em>Big pictures.</em></h1>
-          <p>Walk the grid, follow the clues, and uncover a picture together. A cozy nonogram for you and up to three friends.</p>
+          <h1>Play a nonogram</h1>
+          <p>Solve a grid on your own or with up to three friends. Mark cells with the mouse or by walking in Fill mode.</p>
           <div className="hero-actions">
-            <button className="primary create-button" onClick={() => { setError(''); setDialog('create'); }}><span aria-hidden="true">＋</span> Create Room <span aria-hidden="true">↗</span></button>
+            <button className="primary create-button" onClick={() => { setError(''); setDialog('create'); }}>Create Room</button>
             <form className="join-form" onSubmit={join}>
               <label className="sr-only" htmlFor="invite-code">Invite code</label>
-              <input id="invite-code" autoComplete="off" spellCheck={false} placeholder="INVITE CODE" value={invite} maxLength={6} onChange={e => setInvite(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}/>
-              <button type="submit">Join Room <span aria-hidden="true">→</span></button>
+              <input id="invite-code" autoComplete="off" spellCheck={false} placeholder="Invite code" value={invite} maxLength={6} onChange={e => setInvite(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}/>
+              <button type="submit">Join Room</button>
             </form>
           </div>
           {error && !dialog && <p className="error" role="alert">{error}</p>}
