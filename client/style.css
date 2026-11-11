@@ -166,6 +166,8 @@ dialog::backdrop { background: #1c3b2f85; backdrop-filter: blur(3px); }
 .settings-actions { display: flex; justify-content: end; gap: 8px; }
 .victory-picture { display: grid; width: min(100%, 240px); max-height: 310px; margin: 0 auto; border: 5px solid #c6d9bd; background: #e9efe0; animation: appear .45s ease-out; }
 .victory-picture .filled { background: #467054; }
+.victory-picture .crossed { background: linear-gradient(45deg, transparent 46%, var(--muted) 47% 53%, transparent 54%) center / 55% 55% no-repeat,
+  linear-gradient(-45deg, transparent 46%, var(--muted) 47% 53%, transparent 54%) center / 55% 55% no-repeat; }
 .victory-details { margin: 15px 0; text-align: center; color: var(--muted); }
 @keyframes appear { from { opacity: .55; transform: scale(.97); } to { opacity: 1; transform: scale(1); } }
 [data-reduced-motion=true] *, [data-reduced-motion=true] *::before, [data-reduced-motion=true] *::after {

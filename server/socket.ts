@@ -1,11 +1,11 @@
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { Server } from 'socket.io';
-import { boardMargin, constrainPosition, crossBatchLimit, directions, insideBoard, movementInterval } from '../shared/protocol.ts';
+import { boardMargin, constrainPosition, crossBatchLimit, directions, insideBoard } from '../shared/protocol.ts';
 import type { Ack, Identity, Motion, Snapshot, ToClient, ToServer, Update } from '../shared/protocol.ts';
 import { newGame } from '../shared/board.ts';
 import { generateAsync } from './generation.ts';
-import { addSession, apply, applyCrosses, codeOf, digest, full, lease, profileOf, reconcile, roomCode, settingsOf, snapshot, start, tokenOf } from './room.ts';
+import { addSession, apply, applyCrosses, codeOf, digest, finishedPuzzle, full, lease, profileOf, reconcile, returnToLobby, roomCode, settingsOf, snapshot, start, tokenOf } from './room.ts';
 import { RoomStore } from './store.ts';
 import type { Room, Session } from './store.ts';
 
@@ -33,7 +33,7 @@ export function createGameServer() {
   io.on('connection', socket => {
     let binding: { code: string; id: string } | undefined;
     let joining = false;
-    let moving = false;
+    let moves = Promise.resolve();
     let inputWindow = 0;
     let inputCount = 0;
 
@@ -68,6 +68,9 @@ export function createGameServer() {
         return { value: undefined, update: changed ? full(room) : update };
       });
       return result.room;
+    }
+    function queueMovement(change: Parameters<typeof mutate>[0]) {
+      moves = moves.then(async () => { await mutate(change); }).catch(() => {});
     }
     async function enter(work: () => Promise<{ room: Room; session: Session }>): Promise<Identity> {
       if (joining || binding) throw new Error('Leave your current room first.');
@@ -144,6 +147,7 @@ export function createGameServer() {
     socket.on('room:settings', (data, ack) => void answer(ack, async () => {
       const settings = settingsOf(data);
       await mutate(room => {
+        if (room.phase === 'completed' || room.phase === 'failed') returnToLobby(room);
         if (room.phase !== 'lobby') throw new Error('Settings can only change in the lobby.');
         const previous = room.settings;
         room.settings = settings;
@@ -155,12 +159,7 @@ export function createGameServer() {
     socket.on('game:lobby', ack => void answer(ack, async () => {
       await mutate(room => {
         if (room.phase !== 'completed' && room.phase !== 'failed') throw new Error('Finish the puzzle first.');
-        room.phase = 'lobby';
-        room.game = undefined;
-        room.finishedAt = undefined;
-        room.startedAt = undefined;
-        room.progress = 0;
-        room.participants = [];
+        returnToLobby(room);
         return full(room);
       }, true);
     }));
@@ -169,8 +168,9 @@ export function createGameServer() {
       const generationId = randomUUID();
       const room = await mutate((room, _, now) => {
         const ended = room.phase === 'completed' || room.phase === 'failed';
-        if (room.phase !== 'lobby' && !(play && ended)) throw new Error('A game is already in progress.');
+        if (room.phase !== 'lobby' && !ended) throw new Error('A game is already in progress.');
         if (play && room.phase === 'lobby' && room.game) { start(room, now); return full(room); }
+        room.lastResult = finishedPuzzle(room);
         room.game = undefined;
         room.startedAt = undefined;
         room.finishedAt = undefined;
@@ -219,17 +219,15 @@ export function createGameServer() {
       id: player.id, position: player.position, direction: player.direction, mode: player.mode, gridOnly: player.gridOnly, boardId: room.game!.id,
     });
     socket.on('player:move', data => {
-      if (moving || !data || !Object.hasOwn(directions, data.direction)) return;
-      moving = true;
-      void mutate((room, session, now) => {
-        if (room.phase !== 'playing' || data.boardId !== room.game?.id || now - (session.movedAt ?? 0) < movementInterval - 14) return;
+      if (!data || !Object.hasOwn(directions, data.direction) || !allowBoardInput()) return;
+      queueMovement((room, session, now) => {
+        if (room.phase !== 'playing' || data.boardId !== room.game?.id) return;
         const player = session.player;
         const delta = directions[data.direction];
         if (player.gridOnly && delta.x && delta.y) return;
         const x = player.position.x + delta.x;
         const y = player.position.y + delta.y;
         player.direction = data.direction;
-        session.movedAt = now;
         let patch;
         const position = constrainPosition({ x, y }, room.settings, player.gridOnly ? 0 : boardMargin);
         if (position.x !== player.position.x || position.y !== player.position.y) {
@@ -237,27 +235,27 @@ export function createGameServer() {
           if (player.mode === 'fill' && insideBoard(position, room.settings)) patch = apply(room, session, position.x, position.y, 1, now);
         }
         return { type: 'motion', motion: motionOf(room, session), patch };
-      }).catch(() => {}).finally(() => { moving = false; });
+      });
     });
     socket.on('player:mode', data => {
       if (!data || (data.mode !== 'walk' && data.mode !== 'fill') || !allowBoardInput()) return;
-      void mutate((room, session, now) => {
+      queueMovement((room, session, now) => {
         if (room.phase !== 'playing' || data.boardId !== room.game?.id || data.mode === session.player.mode) return;
         session.player.mode = data.mode;
         const { x, y } = session.player.position;
         const patch = data.mode === 'fill' && insideBoard({ x, y }, room.settings) ? apply(room, session, x, y, 1, now) : undefined;
         return { type: 'motion', motion: motionOf(room, session), patch };
-      }).catch(() => {});
+      });
     });
     socket.on('player:grid', data => {
       if (!data || typeof data.gridOnly !== 'boolean' || !allowBoardInput()) return;
-      void mutate((room, session) => {
+      queueMovement((room, session) => {
         if (room.phase !== 'playing' || data.boardId !== room.game?.id) return;
         const { player } = session;
         player.gridOnly = data.gridOnly;
         if (player.gridOnly) player.position = constrainPosition(player.position, room.settings);
         return { type: 'motion', motion: motionOf(room, session) };
-      }).catch(() => {});
+      });
     });
     socket.on('cell:set', (data, ack) => void answer(ack, async () => {
       if (!data || typeof data !== 'object' || !Number.isSafeInteger(data.revision)

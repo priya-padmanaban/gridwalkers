@@ -21,17 +21,17 @@ test('plays a solo puzzle without opening a room socket', async ({ page }) => {
   await expect(page).toHaveURL(/\/$/);
   await board.press('q');
   await expect(page.getByRole('button', { name: /FILL/ })).toBeVisible();
-  await board.press('ArrowRight');
+  await board.press('ArrowRight', { delay: 150 });
   await expect(page.getByText(/^Column 2(?: ✓)?$/)).toBeVisible();
   await board.press('q');
   await expect(page.getByRole('button', { name: /WALK/ })).toBeVisible();
-  await board.press('ArrowUp');
+  await board.press('ArrowUp', { delay: 150 });
   await expect(page.getByText('Outside the grid')).toBeVisible();
   await page.getByRole('button', { name: 'Settings' }).click();
   await page.getByLabel('Grid movement only').check();
   await page.keyboard.press('Escape');
   await expect(page.getByText(/^Row 1(?: ✓)?$/)).toBeVisible();
-  await board.press('ArrowUp');
+  await board.press('ArrowUp', { delay: 150 });
   await expect(page.getByText(/^Row 1(?: ✓)?$/)).toBeVisible();
   await page.getByRole('button', { name: 'Settings' }).click();
   await page.getByLabel('Grid movement only').uncheck();
@@ -46,13 +46,24 @@ test('plays a solo puzzle without opening a room socket', async ({ page }) => {
     await page.keyboard.up('ArrowRight');
     await page.keyboard.up('ArrowDown');
   }
+  const stopped = await board.screenshot();
+  await page.waitForTimeout(200);
+  expect(await board.screenshot()).toEqual(stopped);
+  await page.getByRole('button', { name: 'Gridwalkers' }).click();
+  const leave = page.getByRole('dialog', { name: 'Leave game?' });
+  await expect(leave).toBeVisible();
+  await leave.getByRole('button', { name: 'Keep playing' }).click();
+  await expect(board).toBeFocused();
   await page.getByRole('button', { name: 'Dark mode' }).click();
   await expect(page.locator('.app-shell')).toHaveAttribute('data-theme', 'dark');
-  await page.getByRole('button', { name: 'Settings' }).click();
-  await page.getByRole('button', { name: 'Back to Home' }).click();
+  await page.getByRole('button', { name: 'Gridwalkers' }).click();
+  await leave.getByRole('button', { name: 'Leave game', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Play Solo' })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('button', { name: 'Dark mode' })).toHaveAttribute('aria-pressed', 'true');
+  await page.goto('/room/ABCDEF');
+  await page.getByRole('button', { name: 'Gridwalkers' }).click();
+  await expect(page).toHaveURL(/\/$/);
   expect(socketAttempts).toBe(0);
 });
 

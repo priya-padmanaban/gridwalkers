@@ -34,12 +34,14 @@ export type Player = { id: string; profile: Profile; color: string; connected: b
 export type Line = { complete: boolean; grey: boolean[] };
 export type Board = { id: string; rows: number[][]; columns: number[][]; cells: Mark[]; rowState: Line[]; columnState: Line[] };
 export type EndPhase = 'completed' | 'failed';
+export type PuzzleResult = { phase: EndPhase; settings: Settings; cells: Mark[]; startedAt?: number; finishedAt?: number; participants: number };
 export type Phase = 'lobby' | 'generating' | 'playing' | EndPhase;
 export type Snapshot = {
   version: number;
   code: string; settings: Settings; host: string; players: Player[]; phase: Phase; board?: Board;
   revision: number; startedAt?: number; finishedAt?: number; participants: number; progress: number; error?: string;
   lives?: number;
+  lastResult?: PuzzleResult;
 };
 export type Patch = {
   boardId: string; revision: number; cells: [number, Mark][]; rows: [number, Line][]; columns: [number, Line][];

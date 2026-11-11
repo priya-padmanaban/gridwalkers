@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { MutableRefObject, RefObject } from 'react';
-import { boardMargin, directions, insideBoard, movementInterval } from '../shared/protocol.ts';
+import { boardMargin, constrainPosition, directions, insideBoard, movementInterval } from '../shared/protocol.ts';
 import type { Direction, Line, Mark, Point, Snapshot } from '../shared/protocol.ts';
 import { sprite } from './sprite.tsx';
 
@@ -13,6 +13,10 @@ type Props = {
 };
 const keys: Record<string, Direction> = { w: 'up', a: 'left', s: 'down', d: 'right', arrowup: 'up', arrowleft: 'left', arrowdown: 'down', arrowright: 'right' };
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const samePoint = (a: Point, b: Point) => a.x === b.x && a.y === b.y;
+const directionOf = (x: number, y: number) => (Object.keys(directions) as Direction[])
+  .find(key => directions[key].x === x && directions[key].y === y);
 
 export function BoardCanvas(props: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -34,12 +38,11 @@ export function BoardCanvas(props: Props) {
     let pan: Point | undefined;
     let stroke: { last: Point; cells: Map<number, Point> } | undefined;
     const pressed = new Map<string, Direction>();
-    const motion = new Map<string, { position: Point; moving: boolean }>();
+    const motion = new Map<string, { position: Point; direction: Direction }>();
     const flashes = new Map<number, number>();
     let previousCells: Mark[] | undefined;
-    let nextMove = -Infinity;
     let previousFrame = 0;
-    let queuedDirection: Direction | undefined;
+    let local: { position: Point; cell: Point; pending: { cell: Point; sentAt: number }[]; gridOnly?: boolean; direction: Direction } | undefined;
     const scale = () => clamp(camera.tile * 0.56, 10, 19);
 
     function layout() {
@@ -93,39 +96,65 @@ export function BoardCanvas(props: Props) {
     }
     props.controls.current = { camera: action, focus: () => element.focus() };
 
-    function step(now: number) {
-      if (!latest.current.enabled || now < nextMove) return;
-      const { room, id } = latest.current;
-      const held = [...new Set(pressed.values())];
-      let direction = queuedDirection ?? held.at(-1);
-      if (!room.players.find(player => player.id === id)?.gridOnly && held.length > 1) {
-        const x = Number(held.includes('right')) - Number(held.includes('left'));
-        const y = Number(held.includes('down')) - Number(held.includes('up'));
-        direction = (Object.keys(directions) as Direction[]).find(key => directions[key].x === x && directions[key].y === y);
-      }
-      if (!direction) return;
-      queuedDirection = undefined;
-      latest.current.move(direction);
-      const delta = directions[direction];
-      nextMove = (now - nextMove < 16 ? nextMove : now) + movementInterval * Math.hypot(delta.x, delta.y);
+    function heldDirection(gridOnly?: boolean) {
+      const held = [...pressed.values()];
+      if (gridOnly) return held.at(-1);
+      const x = Number(held.includes('right')) - Number(held.includes('left'));
+      const y = Number(held.includes('down')) - Number(held.includes('up'));
+      return directionOf(x, y);
     }
 
-    function glide(room: Snapshot, now: number, reduced: boolean) {
-      const distance = Math.min(50, Math.max(0, now - previousFrame)) / movementInterval;
+    function glide(now: number) {
+      const { room, id, reduced, enabled } = latest.current;
+      const distance = clamp(now - previousFrame, 0, 50) / movementInterval;
       previousFrame = now;
-      for (const { id, position: target, gridOnly } of room.players) {
-        const current = motion.get(id)?.position ?? target;
-        if (reduced || (gridOnly && !insideBoard(current, room.settings) && !insideBoard({ x: Math.round(current.x), y: Math.round(current.y) }, room.settings))) {
-          motion.set(id, { position: target, moving: false });
+      for (const { id: playerId, position: target, gridOnly, direction } of room.players) {
+        if (playerId === id) {
+          // The avatar uses fractional coordinates while puzzle actions use whole cells.
+          if (!local || local.gridOnly !== gridOnly) {
+            local = { position: target, cell: target, pending: [], gridOnly, direction };
+          }
+          if (!samePoint(local.cell, target)) {
+            const confirmed = local.pending.findIndex(move => samePoint(move.cell, target));
+            if (confirmed < 0) {
+              local.position = target;
+              local.pending.length = 0;
+            } else {
+              local.pending.splice(0, confirmed + 1);
+            }
+            local.cell = target;
+          }
+          if (local.pending.length && now - local.pending[0].sentAt > 1000) {
+            local.position = target;
+            local.pending.length = 0;
+          }
+          const input = enabled ? heldDirection(gridOnly) : undefined;
+          if (input && distance > 0) {
+            const delta = directions[input];
+            const length = Math.hypot(delta.x, delta.y);
+            const position = constrainPosition({
+              x: local.position.x + distance * delta.x / length,
+              y: local.position.y + distance * delta.y / length,
+            }, room.settings, gridOnly ? 0 : boardMargin);
+            const cell = local.pending.at(-1)?.cell ?? local.cell;
+            const nextCell = { x: Math.round(position.x), y: Math.round(position.y) };
+            const step = directionOf(nextCell.x - cell.x, nextCell.y - cell.y);
+            if (step) {
+              local.pending.push({ cell: nextCell, sentAt: now });
+              latest.current.move(step);
+            }
+            local.position = position;
+            local.direction = input;
+          }
+          motion.set(id, { position: reduced ? target : local.position, direction: local.direction });
           continue;
         }
+        const current = motion.get(playerId)?.position ?? target;
         const dx = target.x - current.x;
         const dy = target.y - current.y;
         const remaining = Math.hypot(dx, dy);
-        const fraction = remaining ? Math.min(1, distance / remaining) : 0;
-        const x = current.x + dx * fraction;
-        const y = current.y + dy * fraction;
-        motion.set(id, { position: { x, y }, moving: x !== current.x || y !== current.y });
+        const fraction = reduced || !remaining ? 1 : Math.min(1, distance / remaining);
+        motion.set(playerId, { position: { x: current.x + dx * fraction, y: current.y + dy * fraction }, direction });
       }
     }
 
@@ -143,7 +172,7 @@ export function BoardCanvas(props: Props) {
     }
     function render(now: number) {
       frame = requestAnimationFrame(render);
-      const { room, reduced, enabled, dark, id, optimistic } = latest.current;
+      const { room, reduced, dark, id, optimistic } = latest.current;
       if (!room.board) return;
       const board = room.board;
       const { width: w, height: h } = room.settings;
@@ -161,6 +190,9 @@ export function BoardCanvas(props: Props) {
         rowSlots = Math.max(...board.rows.map(line => line.length));
         columnSlots = Math.max(...board.columns.map(line => line.length));
         motion.clear();
+        local = undefined;
+        pressed.clear();
+        previousFrame = now;
         flashes.clear();
         previousCells = undefined;
         camera.tile = Math.max(w, h) > 22 ? 28 : 34;
@@ -168,10 +200,9 @@ export function BoardCanvas(props: Props) {
         latest.current.onZoom(Math.round(camera.tile / 30 * 100));
       }
       layout();
-      glide(room, now, reduced);
+      glide(now);
       if (camera.follow) center(w, h);
       else constrain(w, h);
-      if (enabled) step(now);
       if (previousCells && previousCells !== board.cells && !reduced) {
         for (let i = 0; i < board.cells.length; i++) {
           if (board.cells[i] === 1 && previousCells[i] !== 1) flashes.set(i, now);
@@ -244,9 +275,8 @@ export function BoardCanvas(props: Props) {
           const px = ox + track.position.x * t;
           const py = oy + track.position.y * t;
           const size = Math.max(9, t * 0.89);
-          const facing = directions[player.direction].x < 0 ? 'left' : directions[player.direction].x > 0 ? 'right' : player.direction;
-          sprite(ctx, player.profile, facing, px + (t - size) / 2, py + t - size - t * 0.13, size,
-            track.moving ? (Math.floor(now / 75) % 2 ? 1 : -1) : 0, player.mode === 'fill');
+          const facing = directions[track.direction].x < 0 ? 'left' : directions[track.direction].x > 0 ? 'right' : track.direction;
+          sprite(ctx, player.profile, facing, px + (t - size) / 2, py + t - size - t * 0.13, size, player.mode === 'fill');
           ctx.fillStyle = player.color;
           ctx.fillRect(px + t * 0.22, py + t - 3, t * 0.56, 2);
           if (t >= 27) {
@@ -349,15 +379,19 @@ export function BoardCanvas(props: Props) {
       if (direction && Object.hasOwn(directions, direction)) {
         event.preventDefault();
         if (!event.repeat && !pressed.has(key)) {
+          glide(performance.now());
           pressed.set(key, direction);
-          queuedDirection = direction;
-          step(performance.now());
         }
       }
       if (key === 'q' && !event.repeat) { event.preventDefault(); latest.current.toggle(); }
     }
-    const keyup = (event: KeyboardEvent) => { pressed.delete(event.key.toLowerCase()); };
-    const blur = () => { pressed.clear(); queuedDirection = undefined; };
+    function keyup(event: KeyboardEvent) {
+      const key = event.key.toLowerCase();
+      if (!pressed.has(key)) return;
+      glide(performance.now());
+      pressed.delete(key);
+    }
+    const blur = () => { pressed.clear(); };
     const cancel = () => { pan = undefined; stroke = undefined; hover = undefined; };
     const leave = () => { hover = undefined; };
     const menu = (event: MouseEvent) => event.preventDefault();
@@ -370,6 +404,7 @@ export function BoardCanvas(props: Props) {
     element.addEventListener('keydown', keydown);
     window.addEventListener('keyup', keyup);
     element.addEventListener('blur', blur);
+    window.addEventListener('blur', blur);
     frame = requestAnimationFrame(render);
     return () => {
       cancelAnimationFrame(frame);
@@ -382,6 +417,7 @@ export function BoardCanvas(props: Props) {
       element.removeEventListener('keydown', keydown);
       window.removeEventListener('keyup', keyup);
       element.removeEventListener('blur', blur);
+      window.removeEventListener('blur', blur);
       props.controls.current = null;
     };
   }, []);

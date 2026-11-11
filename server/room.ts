@@ -1,6 +1,6 @@
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { accessories, difficulties, hairColors, shirts, skins, styles } from '../shared/protocol.ts';
-import type { Mark, Patch, Point, Profile, Settings, Snapshot, Update } from '../shared/protocol.ts';
+import type { Mark, Patch, Point, Profile, PuzzleResult, Settings, Snapshot, Update } from '../shared/protocol.ts';
 import { attemptCrosses, attemptMark } from '../shared/board.ts';
 import type { Room, Session } from './store.ts';
 
@@ -38,6 +38,24 @@ export function profileOf(value: Profile): Profile {
   return { name, skin: value.skin, hair: value.hair, shirt: value.shirt, style: value.style, accessory: value.accessory };
 }
 
+export function finishedPuzzle(room: Room): PuzzleResult | undefined {
+  if (!room.game || (room.phase !== 'completed' && room.phase !== 'failed')) return room.lastResult;
+  return {
+    phase: room.phase, settings: room.settings, cells: room.game.view.cells,
+    startedAt: room.startedAt, finishedAt: room.finishedAt, participants: room.participants.length,
+  };
+}
+
+export function returnToLobby(room: Room) {
+  room.lastResult = finishedPuzzle(room);
+  room.phase = 'lobby';
+  room.game = undefined;
+  room.finishedAt = undefined;
+  room.startedAt = undefined;
+  room.progress = 0;
+  room.participants = [];
+}
+
 export function snapshot(room: Room): Snapshot {
   return {
     version: room.version, code: room.code, settings: room.settings, host: room.host,
@@ -45,7 +63,7 @@ export function snapshot(room: Room): Snapshot {
     board: room.game?.view, revision: room.revision, startedAt: room.startedAt,
     lives: room.game?.lives,
     finishedAt: room.finishedAt, participants: room.participants.length,
-    progress: room.progress, error: room.error,
+    progress: room.progress, error: room.error, lastResult: finishedPuzzle(room),
   };
 }
 export const full = (room: Room): Update => ({ type: 'snapshot', room: snapshot(room) });

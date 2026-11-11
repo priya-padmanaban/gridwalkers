@@ -34,7 +34,7 @@ test('two walkers customize, join via invite, mark together, and share a victory
     await expect(guest.getByLabel(/Nonogram board/)).toBeVisible();
     const room = (await store.read(code))!;
     const player = room.sessions.find(session => session.player.profile.name === 'Fern')!.player;
-    await board.press(player.position.x < 4 ? 'ArrowRight' : 'a');
+    await board.press(player.position.x < 4 ? 'ArrowRight' : 'a', { delay: 150 });
     await expect.poll(async () => (await store.read(code))?.sessions[0].player.position.x).not.toBe(player.position.x);
     await expect(guest.getByRole('button', { name: /WALK/ })).toBeVisible();
     await board.press('q');
@@ -82,7 +82,7 @@ test('two walkers customize, join via invite, mark together, and share a victory
       while (walker.position.x !== x || walker.position.y !== y) {
         const { x: oldX, y: oldY } = walker.position;
         const key = oldX !== x ? (oldX < x ? 'ArrowRight' : 'ArrowLeft') : (oldY < y ? 'ArrowDown' : 'ArrowUp');
-        await board.press(key);
+        await board.press(key, { delay: 150 });
         await expect.poll(async () => (await currentWalker()).position).not.toEqual({ x: oldX, y: oldY });
         walker = await currentWalker();
       }
@@ -97,6 +97,23 @@ test('two walkers customize, join via invite, mark together, and share a victory
     await expect(guest.getByRole('dialog', { name: 'Puzzle Complete!' })).toBeVisible();
     expect((await store.read(code))?.game?.view.cells.every(cell => cell === 1 || cell === 2)).toBe(true);
     await expect(host.getByRole('button', { name: 'Play Again' })).toBeVisible();
+    await host.getByRole('dialog', { name: 'Puzzle Complete!' }).getByRole('button', { name: 'Close' }).click();
+    await expect(host.getByRole('heading', { name: 'The puzzle room' })).toBeVisible();
+
+    await guest.reload();
+    await expect(guest.getByRole('heading', { name: 'The puzzle room' })).toBeVisible();
+    await guest.getByRole('button', { name: 'View last puzzle' }).click();
+    await expect(guest.getByRole('img', { name: 'Final puzzle board' })).toBeVisible();
+    await guest.getByRole('button', { name: 'Return to Lobby' }).click();
+
+    await host.getByRole('button', { name: 'Gridwalkers' }).click();
+    await expect(host.getByRole('button', { name: 'Play Solo' })).toBeVisible();
+    await expect(guest.getByRole('button', { name: 'Start Game' })).toBeEnabled();
+    await expect(guest.getByRole('button', { name: 'Regenerate' })).toBeEnabled();
+    await guest.getByRole('button', { name: 'Change board settings' }).click();
+    await guest.getByRole('button', { name: 'Save board settings' }).click();
+    await guest.getByRole('button', { name: 'View last puzzle' }).click();
+    await expect(guest.getByRole('img', { name: 'Final puzzle board' })).toBeVisible();
   } finally {
     store.redis.disconnect();
     store.subscriber.disconnect();

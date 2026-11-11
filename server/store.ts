@@ -1,15 +1,16 @@
 import Redis from 'ioredis';
-import type { Notice, Player, Settings, Snapshot, Update } from '../shared/protocol.ts';
+import type { Notice, Player, PuzzleResult, Settings, Snapshot, Update } from '../shared/protocol.ts';
 import type { Game } from '../shared/board.ts';
 
 export type Session = {
   player: Player; tokenHash: string; socket: string; until: number; joined: number;
-  movedAt?: number; actionIds?: string[];
+  actionIds?: string[];
 };
 export type Room = {
   code: string; version: number; revision: number; host: string; settings: Settings;
   sessions: Session[]; phase: Snapshot['phase']; progress: number; game?: Game;
   startedAt?: number; finishedAt?: number; participants: string[]; error?: string;
+  lastResult?: PuzzleResult;
   generation?: { id: string; until: number; start: boolean };
 };
 const commit = `

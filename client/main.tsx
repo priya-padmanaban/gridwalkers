@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { clues } from '../shared/clues.ts';
 import { accessories, crossBatchLimit, defaultProfile, defaultSettings, difficulties, hairColors, insideBoard, puzzleLives, shirts, skins, styles } from '../shared/protocol.ts';
-import type { Direction, Line, Mark, Point, Profile, Result, Settings, Snapshot } from '../shared/protocol.ts';
+import type { Direction, Line, Mark, Point, Profile, PuzzleResult, Result, Settings, Snapshot } from '../shared/protocol.ts';
 import { Avatar } from './sprite.tsx';
 import { BoardCanvas } from './Board.tsx';
 import type { BoardControls } from './Board.tsx';
@@ -151,7 +151,7 @@ function playChime() {
 function App() {
   const [profile, setProfile] = useState(readProfile);
   const [invite, setInvite] = useState(roomRoute);
-  const [dialog, setDialog] = useState<'solo' | 'create' | 'profile' | 'join' | 'settings'>();
+  const [dialog, setDialog] = useState<'solo' | 'create' | 'profile' | 'join' | 'settings' | 'leave' | 'result'>();
   const [settings, setSettings] = useState<Settings>({ ...defaultSettings });
   const [zoom, setZoom] = useState(100);
   const [copied, setCopied] = useState('');
@@ -162,7 +162,7 @@ function App() {
   });
   const [reduced, setReduced] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [seenVictory, setSeenVictory] = useState('');
-  const [lobbyBoard, setLobbyBoard] = useState('');
+  const activeBoard = useRef<string | undefined>(undefined);
   const controls = useRef<BoardControls>(null);
   const optimistic = useRef(new Map<number, Mark>());
   const pending = useRef(new Map<number, string>());
@@ -183,21 +183,29 @@ function App() {
   const phase = room?.phase;
   const playing = phase === 'playing' && !!boardId;
   const ended = phase === 'completed' || phase === 'failed';
-  const showResult = ended && !!boardId && seenVictory !== boardId;
-  const waiting = ended && !!boardId && lobbyBoard === boardId;
+  const showResult = ended && !!boardId && activeBoard.current === boardId && seenVictory !== boardId;
+  const lobby = !!room && !isSolo && !playing && !showResult;
+  const result: PuzzleResult | undefined = room?.board && (phase === 'completed' || phase === 'failed') ? {
+    phase, settings: room.settings, cells: room.board.cells, startedAt: room.startedAt,
+    finishedAt: room.finishedAt, participants: room.participants,
+  } : room?.lastResult;
   const lives = room?.lives ?? puzzleLives;
   useEffect(() => {
     optimistic.current.clear();
     pending.current.clear();
-    if (playing) controls.current?.focus();
+    if (playing) {
+      activeBoard.current = boardId;
+      setDialog(current => current === 'result' ? undefined : current);
+      controls.current?.focus();
+    }
   }, [boardId, playing, connected]);
   const chimeId = useRef('');
   useEffect(() => {
-    if (phase === 'completed' && boardId && chimeId.current !== boardId) {
+    if (showResult && phase === 'completed' && boardId && chimeId.current !== boardId) {
       chimeId.current = boardId;
       if (!muted) playChime();
     }
-  }, [phase, boardId, muted]);
+  }, [phase, boardId, muted, showResult]);
 
   function feedback(err: Error | null, result?: Result) {
     if (err || !result?.ok) setError(result && !result.ok ? result.error : 'The room service did not respond. Try again.');
@@ -227,11 +235,15 @@ function App() {
     setDialog('join');
   }
   function leave() {
-    if (isSolo) solo.leave();
-    else connection.leave();
+    solo.leave();
+    if (!isSolo) connection.leave();
     if (location.pathname !== '/') history.pushState(null, '', '/');
     setInvite('');
     setDialog(undefined);
+  }
+  function stay() {
+    setDialog(undefined);
+    requestAnimationFrame(() => controls.current?.focus());
   }
   function openSettings() {
     if (room) setSettings(room.settings);
@@ -266,7 +278,7 @@ function App() {
   }
   function move(direction: Direction) {
     if (isSolo) { solo.move(direction); return; }
-    if (boardId && connected && socket.connected) socket.volatile.emit('player:move', { direction, boardId });
+    if (boardId && connected && socket.connected) socket.emit('player:move', { direction, boardId });
   }
   async function cross(points: Point[]) {
     if (isSolo) { solo.cross(points); return; }
@@ -307,9 +319,12 @@ function App() {
   const activeCount = room?.players.filter(player => player.connected).length ?? 0;
   return <div className="app-shell" data-theme={dark ? 'dark' : 'light'} data-reduced-motion={reduced || undefined}>
     <header className="header"><div className="header-inner">
-      <div className="brand-button"><Logo/></div>
+      <button type="button" className="brand-button" onClick={() => {
+        if (playing) setDialog('leave');
+        else leave();
+      }}><Logo/></button>
       {room && <div className="top-meta"><span className="room-tag">{isSolo ? 'Solo' : room.code}</span>
-        {phase !== 'lobby' && phase !== 'generating' && <><Timer start={room.startedAt} finish={room.finishedAt}/><span>{room.settings.width} × {room.settings.height}</span><span>{cap(room.settings.difficulty)}</span></>}
+        {(playing || showResult || isSolo) && <><Timer start={room.startedAt} finish={room.finishedAt}/><span>{room.settings.width} × {room.settings.height}</span><span>{cap(room.settings.difficulty)}</span></>}
         {!isSolo && <span><i className="presence online"/> {activeCount}/4 online</span>}
       </div>}
       <div className="header-actions"><button type="button" className="header-button" aria-pressed={dark} onClick={() => theme(!dark)}>Dark mode</button>
@@ -339,23 +354,24 @@ function App() {
       <section className="quick-start" aria-label="Game controls"><h2>How to play</h2><Controls/></section>
     </main>}
 
-    {room && (phase === 'lobby' || phase === 'generating' || waiting) && <main className="lobby">
+    {room && lobby && <main className="lobby">
       <div className="lobby-heading"><p className="eyebrow">PRIVATE ROOM</p><h1>{room.settings.name || 'The puzzle room'}</h1><p>Invite your friends or start walking solo.</p></div>
       {!connected && <p className="connection-note" role="status">{error || 'Reconnecting to the room…'}</p>}
       <div className="lobby-grid">
         <section className="panel lobby-panel"><h2>Invite friends</h2>
           <div className="code-box"><strong>{room.code}</strong><button onClick={() => void copy(room.code, 'code')}>{copied === 'code' ? 'Copied!' : 'Copy code'}</button></div>
           <div className="invite-link"><input aria-label="Shareable invite link" readOnly value={inviteLink} onFocus={e => e.target.select()}/><button onClick={() => void copy(inviteLink, 'link')}>{copied === 'link' ? 'Copied!' : 'Copy link'}</button></div>
-          <div className="lobby-settings"><h2>Puzzle</h2><p>{room.settings.width} × {room.settings.height} · {cap(room.settings.difficulty)}{room.board ? ' · Generated' : ''}</p>
-            {host && phase === 'lobby' && <button onClick={() => { setSettings(room.settings); setDialog('settings'); }}>Change board settings</button>}
+          <div className="lobby-settings"><h2>Puzzle</h2><p>{room.settings.width} × {room.settings.height} · {cap(room.settings.difficulty)}{room.board && !ended ? ' · Generated' : ''}</p>
+            {host && (phase === 'lobby' || ended) && <button onClick={() => { setSettings(room.settings); setDialog('settings'); }}>Change board settings</button>}
           </div>
           {phase === 'generating' && <div role="status" className="generation"><strong>Generating a puzzle…</strong><progress value={room.progress} max={100}/></div>}
           {(error || room.error) && <p role="alert" className="error">{error || room.error}</p>}
-          {waiting && <p className="muted">Waiting for the host to start a new puzzle.</p>}
-          {phase === 'lobby' && <div className="lobby-actions">
+          {ended && !host && <p className="muted">Waiting for the host to start a new puzzle.</p>}
+          {(phase === 'lobby' || ended) && <div className="lobby-actions">
             {host ? <><button className="primary" disabled={!connected} onClick={() => { setError(''); socket.timeout(5000).emit('game:start', feedback); }}>Start Game <span aria-hidden="true">→</span></button>
-              <button disabled={!connected} onClick={() => { setError(''); socket.timeout(5000).emit('game:generate', feedback); }}>{room.board ? 'Regenerate' : 'Generate puzzle'}</button></> :
+              <button disabled={!connected} onClick={() => { setError(''); socket.timeout(5000).emit('game:generate', feedback); }}>{room.board ? 'Regenerate' : 'Generate puzzle'}</button></> : !ended &&
               <button className={me?.ready ? '' : 'primary'} disabled={!connected} onClick={() => socket.timeout(5000).emit('room:ready', feedback)}>{me?.ready ? 'Mark not ready' : 'Mark ready'}</button>}
+            {result && <button onClick={() => setDialog('result')}>View last puzzle</button>}
           </div>}
         </section>
         <section className="panel lobby-panel"><h2>Walkers <small>{activeCount}/4</small></h2><Players room={room} id={id}/>
@@ -364,7 +380,7 @@ function App() {
       </div>
     </main>}
 
-    {room?.board && (playing || (ended && !waiting)) && <main className="game">
+    {room?.board && (playing || (ended && (showResult || isSolo))) && <main className="game">
       {!connected && <div className="connection-note" role="status">{error || 'Reconnecting to the room…'}</div>}
       <div className="game-grid">
         <section className="board-frame"><BoardCanvas room={room} id={id} controls={controls} reduced={reduced} dark={dark} change={change} cross={cross} move={move} toggle={toggle}
@@ -417,8 +433,12 @@ function App() {
       {busy && <p role="status">Joining room…</p>}
       {error && <p className="error" role="alert">{error}</p>}
     </Dialog>}
+    {dialog === 'leave' && <Dialog title="Leave game?" close={stay}>
+      <p>Leave the current game and return to the home screen?</p>
+      <div className="settings-actions"><button onClick={stay}>Keep playing</button><button className="primary" onClick={leave}>Leave game</button></div>
+    </Dialog>}
     {dialog === 'settings' && room && <Dialog title="Settings" close={() => { setDialog(undefined); controls.current?.focus(); }}>
-      {host && phase === 'lobby' && <form onSubmit={event => {
+      {host && (phase === 'lobby' || ended) && <form onSubmit={event => {
         event.preventDefault();
         socket.timeout(4000).emit('room:settings', settings, (err, result) => {
           if (!err && result?.ok) setDialog(undefined);
@@ -434,18 +454,21 @@ function App() {
       <div className="settings-actions"><button onClick={() => setDialog('profile')}>Edit character</button><button onClick={leave}>{isSolo ? 'Back to Home' : 'Leave room'}</button></div>
       {error && <p className="error" role="alert">{error}</p>}
     </Dialog>}
-    {showResult && !dialog && room.board && <Dialog title={phase === 'failed' ? 'Out of lives' : 'Puzzle Complete!'} close={() => setSeenVictory(boardId)}>
-      {phase === 'failed' ? <p>The puzzle ended after three mistakes.</p> : <div className="victory-picture" style={{ gridTemplateColumns: 'repeat(' + room.settings.width + ', 1fr)', aspectRatio: room.settings.width + ' / ' + room.settings.height }} aria-label="Finished puzzle" role="img">
-        {room.board.cells.map((cell, i) => <i className={cell === 1 ? 'filled' : ''} key={i}/>)}
-      </div>}
-      <p className="victory-details">{room.settings.width} × {room.settings.height} · {cap(room.settings.difficulty)} · <Timer start={room.startedAt} finish={room.finishedAt}/> · {room.participants} {room.participants === 1 ? 'walker' : 'walkers'}</p>
+    {result && ((showResult && !dialog) || dialog === 'result') && <Dialog
+      title={result.phase === 'failed' ? 'Out of lives' : 'Puzzle Complete!'}
+      close={() => { if (boardId) setSeenVictory(boardId); setDialog(undefined); }}>
+      {result.phase === 'failed' && <p>The puzzle ended after three mistakes.</p>}
+      <div className="victory-picture" style={{ gridTemplateColumns: 'repeat(' + result.settings.width + ', 1fr)', aspectRatio: result.settings.width + ' / ' + result.settings.height }} aria-label="Final puzzle board" role="img">
+        {result.cells.map((cell, i) => <i className={cell === 1 ? 'filled' : cell === 2 ? 'crossed' : ''} key={i}/>)}
+      </div>
+      <p className="victory-details">{result.settings.width} × {result.settings.height} · {cap(result.settings.difficulty)} · <Timer start={result.startedAt} finish={result.finishedAt}/> · {result.participants} {result.participants === 1 ? 'walker' : 'walkers'}</p>
       <div className="settings-actions">
         {isSolo ? <>
-          <button className="primary" onClick={() => { setSettings(room.settings); setDialog('solo'); }}>Play Again</button>
+          <button className="primary" onClick={() => { setSettings(result.settings); setDialog('solo'); }}>Play Again</button>
           <button onClick={leave}>Back to Home</button>
         </> : <>
-          {host && <button className="primary" onClick={() => { setSeenVictory(boardId); socket.timeout(5000).emit('game:start', feedback); }}>Play Again</button>}
-          <button onClick={() => { setSeenVictory(boardId); if (host) socket.timeout(5000).emit('game:lobby', feedback); else setLobbyBoard(boardId); }}>Return to Lobby</button>
+          {showResult && host && <button className="primary" disabled={!connected} onClick={() => { setSeenVictory(boardId!); socket.timeout(5000).emit('game:start', feedback); }}>Play Again</button>}
+          <button onClick={() => { if (boardId) setSeenVictory(boardId); setDialog(undefined); }}>Return to Lobby</button>
         </>}
       </div>
     </Dialog>}
