@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { MutableRefObject, RefObject } from 'react';
-import { directions, movementInterval } from '../shared/protocol.ts';
+import { boardMargin, directions, insideBoard, movementInterval } from '../shared/protocol.ts';
 import type { Direction, Line, Mark, Point, Snapshot } from '../shared/protocol.ts';
 import { sprite } from './sprite.tsx';
 
@@ -8,8 +8,8 @@ export type CameraAction = 'fit' | 'center' | 'in' | 'out';
 export type BoardControls = { camera(action: CameraAction): void; focus(): void };
 type Props = {
   room: Snapshot; id: string; controls: RefObject<BoardControls | null>; reduced: boolean;
-  change(x: number, y: number, mark: Mark): void; move(direction: Direction): void; toggle(): void;
-  enabled: boolean; onZoom(zoom: number): void; optimistic: MutableRefObject<Map<number, Mark>>;
+  change(x: number, y: number, mark: Mark): void; cross(points: Point[]): void; move(direction: Direction): void; toggle(): void;
+  enabled: boolean; dark: boolean; onZoom(zoom: number): void; optimistic: MutableRefObject<Map<number, Mark>>;
 };
 const keys: Record<string, Direction> = { w: 'up', a: 'left', s: 'down', d: 'right', arrowup: 'up', arrowleft: 'left', arrowdown: 'down', arrowright: 'right' };
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -31,7 +31,8 @@ export function BoardCanvas(props: Props) {
     let frame = 0;
     let boardId = '';
     let hover: Point | undefined;
-    let drag: { x: number; y: number; pan: boolean; button: number } | undefined;
+    let pan: Point | undefined;
+    let stroke: { last: Point; cells: Map<number, Point> } | undefined;
     const pressed = new Map<string, Direction>();
     const motion = new Map<string, { position: Point; moving: boolean }>();
     const flashes = new Map<number, number>();
@@ -46,8 +47,11 @@ export function BoardCanvas(props: Props) {
       top = Math.min(height * 0.42, columnSlots * scale() + 15);
     }
     function constrain(w: number, h: number) {
-      const bound = (p: number, available: number, size: number) => size < available
-        ? (available - size) / 2 : clamp(p, available - size, 0);
+      const { room, id } = latest.current;
+      const margin = (!room.players.find(player => player.id === id)?.gridOnly ||
+        room.players.some(player => player.connected && !insideBoard(player.position, room.settings))) ? boardMargin * camera.tile : 0;
+      const bound = (p: number, available: number, size: number) => size + 2 * margin < available
+        ? (available - size) / 2 : clamp(p, available - size - margin, margin);
       camera.x = bound(camera.x, width - left, w * camera.tile);
       camera.y = bound(camera.y, height - top, h * camera.tile);
     }
@@ -91,45 +95,55 @@ export function BoardCanvas(props: Props) {
 
     function step(now: number) {
       if (!latest.current.enabled || now < nextMove) return;
-      const direction = queuedDirection ?? Array.from(pressed.values()).at(-1);
+      const { room, id } = latest.current;
+      const held = [...new Set(pressed.values())];
+      let direction = queuedDirection ?? held.at(-1);
+      if (!room.players.find(player => player.id === id)?.gridOnly && held.length > 1) {
+        const x = Number(held.includes('right')) - Number(held.includes('left'));
+        const y = Number(held.includes('down')) - Number(held.includes('up'));
+        direction = (Object.keys(directions) as Direction[]).find(key => directions[key].x === x && directions[key].y === y);
+      }
       if (!direction) return;
       queuedDirection = undefined;
       latest.current.move(direction);
-      nextMove = (now - nextMove < 16 ? nextMove : now) + movementInterval;
+      const delta = directions[direction];
+      nextMove = (now - nextMove < 16 ? nextMove : now) + movementInterval * Math.hypot(delta.x, delta.y);
     }
 
     function glide(room: Snapshot, now: number, reduced: boolean) {
       const distance = Math.min(50, Math.max(0, now - previousFrame)) / movementInterval;
       previousFrame = now;
-      for (const { id, position: target, direction } of room.players) {
+      for (const { id, position: target, gridOnly } of room.players) {
         const current = motion.get(id)?.position ?? target;
-        if (reduced) { motion.set(id, { position: target, moving: false }); continue; }
+        if (reduced || (gridOnly && !insideBoard(current, room.settings) && !insideBoard({ x: Math.round(current.x), y: Math.round(current.y) }, room.settings))) {
+          motion.set(id, { position: target, moving: false });
+          continue;
+        }
         const dx = target.x - current.x;
         const dy = target.y - current.y;
-        // Finish the previous axis first when a turn arrives before a tile is reached.
-        const verticalFirst = directions[direction].x !== 0;
-        const first = Math.min(distance, Math.abs(verticalFirst ? dy : dx));
-        const second = distance - first;
-        const x = current.x + Math.sign(dx) * Math.min(Math.abs(dx), verticalFirst ? second : first);
-        const y = current.y + Math.sign(dy) * Math.min(Math.abs(dy), verticalFirst ? first : second);
+        const remaining = Math.hypot(dx, dy);
+        const fraction = remaining ? Math.min(1, distance / remaining) : 0;
+        const x = current.x + dx * fraction;
+        const y = current.y + dy * fraction;
         motion.set(id, { position: { x, y }, moving: x !== current.x || y !== current.y });
       }
     }
 
     function lineText(values: number[], status: Line, x: number, y: number, horizontal: boolean, available: number) {
+      const dark = latest.current.dark;
       const slot = Math.min(scale(), available / values.length);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.font = '600 ' + Math.max(8, Math.min(camera.tile * 0.61, slot * 0.82, 15)) + 'px "IBM Plex Mono", monospace';
       for (let i = 0; i < values.length; i++) {
-        ctx.fillStyle = status.grey[i] ? '#819180' : '#2b4738';
+        ctx.fillStyle = status.grey[i] ? (dark ? '#8f9b94' : '#819180') : (dark ? '#e1ebe4' : '#2b4738');
         const offset = (values.length - i - 0.5) * slot;
         ctx.fillText(String(values[i]), horizontal ? x - offset : x, horizontal ? y : y - offset, slot);
       }
     }
     function render(now: number) {
       frame = requestAnimationFrame(render);
-      const { room, reduced, enabled, id, optimistic } = latest.current;
+      const { room, reduced, enabled, dark, id, optimistic } = latest.current;
       if (!room.board) return;
       const board = room.board;
       const { width: w, height: h } = room.settings;
@@ -166,7 +180,7 @@ export function BoardCanvas(props: Props) {
       previousCells = board.cells;
       for (const [i, at] of flashes) if (now - at > 350) flashes.delete(i);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.fillStyle = '#edf0e4';
+      ctx.fillStyle = dark ? '#19221e' : '#edf0e4';
       ctx.fillRect(0, 0, width, height);
       const t = camera.tile;
       const ox = left + camera.x;
@@ -182,17 +196,19 @@ export function BoardCanvas(props: Props) {
       const me = room.players.find(player => player.id === id);
       for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
         const i = y * w + x;
-        const mark = optimistic.current.get(i) ?? board.cells[i];
+        const actual = optimistic.current.get(i) ?? board.cells[i];
+        const mark = actual === 0 && stroke && stroke.cells.size > 1 && stroke.cells.has(i) ? 2 : actual;
         const px = ox + x * t;
         const py = oy + y * t;
-        ctx.fillStyle = mark === 1 ? '#416852' : (x === me?.position.x || y === me?.position.y) ? '#f1f4e9' : '#fffdf5';
+        const focused = x === me?.position.x || y === me?.position.y;
+        ctx.fillStyle = mark === 1 ? (dark ? '#6b9b7c' : '#416852') : focused ? (dark ? '#283a30' : '#f1f4e9') : (dark ? '#222e28' : '#fffdf5');
         ctx.fillRect(px, py, t, t);
         if (mark === 1 && t >= 15) {
           ctx.fillStyle = '#ffffff1f';
           ctx.fillRect(px + 2, py + 2, t - 4, 2);
         }
         if (mark === 2) {
-          ctx.strokeStyle = '#789080';
+          ctx.strokeStyle = dark ? '#9aab9f' : '#789080';
           ctx.lineWidth = Math.max(1, t / 19);
           ctx.beginPath();
           ctx.moveTo(px + t * 0.35, py + t * 0.35);
@@ -213,7 +229,7 @@ export function BoardCanvas(props: Props) {
       }
       function gridLine(index: number, max: number, vertical: boolean) {
         const strong = index % 5 === 0 || index === max;
-        ctx.strokeStyle = strong ? '#5e7666' : '#b9c8b8';
+        ctx.strokeStyle = strong ? (dark ? '#83998a' : '#5e7666') : (dark ? '#46574c' : '#b9c8b8');
         ctx.lineWidth = strong ? 1.8 : 0.8;
         ctx.beginPath();
         if (vertical) { ctx.moveTo(ox + index * t, oy); ctx.lineTo(ox + index * t, oy + h * t); }
@@ -228,7 +244,8 @@ export function BoardCanvas(props: Props) {
           const px = ox + track.position.x * t;
           const py = oy + track.position.y * t;
           const size = Math.max(9, t * 0.89);
-          sprite(ctx, player.profile, player.direction, px + (t - size) / 2, py + t - size - t * 0.13, size,
+          const facing = directions[player.direction].x < 0 ? 'left' : directions[player.direction].x > 0 ? 'right' : player.direction;
+          sprite(ctx, player.profile, facing, px + (t - size) / 2, py + t - size - t * 0.13, size,
             track.moving ? (Math.floor(now / 75) % 2 ? 1 : -1) : 0, player.mode === 'fill');
           ctx.fillStyle = player.color;
           ctx.fillRect(px + t * 0.22, py + t - 3, t * 0.56, 2);
@@ -249,7 +266,8 @@ export function BoardCanvas(props: Props) {
       ctx.save();
       ctx.beginPath(); ctx.rect(left, 0, width - left, top); ctx.clip();
       for (let x = x0; x < x1; x++) {
-        ctx.fillStyle = x === me?.position.x ? '#d3e2cd' : board.columnState[x].complete ? '#e3ecdf' : '#f6f7ed';
+        ctx.fillStyle = x === me?.position.x ? (dark ? '#385346' : '#d3e2cd')
+          : board.columnState[x].complete ? (dark ? '#293a31' : '#e3ecdf') : (dark ? '#252f29' : '#f6f7ed');
         ctx.fillRect(ox + x * t, 0, t - 1, top - 1);
         lineText(board.columns[x], board.columnState[x], ox + (x + 0.5) * t, top - 6, false, top - 10);
       }
@@ -257,7 +275,8 @@ export function BoardCanvas(props: Props) {
       ctx.save();
       ctx.beginPath(); ctx.rect(0, top, left, height - top); ctx.clip();
       for (let y = y0; y < y1; y++) {
-        ctx.fillStyle = y === me?.position.y ? '#d3e2cd' : board.rowState[y].complete ? '#e3ecdf' : '#f6f7ed';
+        ctx.fillStyle = y === me?.position.y ? (dark ? '#385346' : '#d3e2cd')
+          : board.rowState[y].complete ? (dark ? '#293a31' : '#e3ecdf') : (dark ? '#252f29' : '#f6f7ed');
         ctx.fillRect(0, oy + y * t, left - 1, t - 1);
         lineText(board.rows[y], board.rowState[y], left - 6, oy + (y + 0.5) * t, true, left - 10);
       }
@@ -278,32 +297,50 @@ export function BoardCanvas(props: Props) {
       if (event.button === 1) event.preventDefault();
       element.focus({ preventScroll: true });
       element.setPointerCapture(event.pointerId);
-      drag = { x: event.clientX, y: event.clientY, pan: event.button === 1, button: event.button };
+      if (event.button === 1) pan = { x: event.clientX, y: event.clientY };
+      else {
+        const cell = point(event);
+        if (cell && latest.current.enabled) {
+          stroke = { last: cell, cells: new Map([[cell.y * latest.current.room.settings.width + cell.x, cell]]) };
+        }
+      }
     }
     function move(event: PointerEvent) {
       hover = point(event);
-      if (!drag) return;
-      const dx = event.clientX - drag.x;
-      const dy = event.clientY - drag.y;
-      if (drag.pan || Math.hypot(dx, dy) > 5) {
-        camera.x += dx;
-        camera.y += dy;
+      if (pan) {
+        camera.x += event.clientX - pan.x;
+        camera.y += event.clientY - pan.y;
         camera.follow = false;
-        drag = { ...drag, x: event.clientX, y: event.clientY, pan: true };
+        pan = { x: event.clientX, y: event.clientY };
       }
+      if (hover) paintTo(hover);
     }
-    function markAt(event: MouseEvent, cross: boolean) {
-      const cell = point(event);
-      if (!cell || !latest.current.enabled) return;
-      const { room, optimistic } = latest.current;
-      const index = cell.y * room.settings.width + cell.x;
-      const mark = optimistic.current.get(index) ?? room.board?.cells[index];
-      const requested = cross ? 2 : 1;
-      latest.current.change(cell.x, cell.y, mark === requested ? 0 : requested);
+    function paintTo(cell: Point) {
+      if (!stroke) return;
+      const { x, y } = stroke.last;
+      const steps = Math.max(Math.abs(cell.x - x), Math.abs(cell.y - y));
+      const w = latest.current.room.settings.width;
+      for (let i = 1; i <= steps; i++) {
+        const px = Math.round(x + (cell.x - x) * i / steps);
+        const py = Math.round(y + (cell.y - y) * i / steps);
+        stroke.cells.set(py * w + px, { x: px, y: py });
+      }
+      stroke.last = cell;
     }
     function up(event: PointerEvent) {
-      if (drag && !drag.pan && drag.button === 0 && event.button === 0) markAt(event, false);
-      drag = undefined;
+      if (event.button === 1) pan = undefined;
+      if (event.button !== 0 || !stroke) return;
+      const cell = point(event);
+      if (cell) paintTo(cell);
+      const cells = stroke.cells;
+      stroke = undefined;
+      const { enabled, room, optimistic, change, cross } = latest.current;
+      if (!enabled) return;
+      if (cells.size > 1) { cross([...cells.values()]); return; }
+      if (!cell) return;
+      const index = cell.y * room.settings.width + cell.x;
+      const mark = optimistic.current.get(index) ?? room.board?.cells[index];
+      change(cell.x, cell.y, mark === 2 ? 0 : 2);
     }
     function keydown(event: KeyboardEvent) {
       if (event.ctrlKey || event.metaKey || event.altKey || !latest.current.enabled) return;
@@ -321,14 +358,9 @@ export function BoardCanvas(props: Props) {
     }
     const keyup = (event: KeyboardEvent) => { pressed.delete(event.key.toLowerCase()); };
     const blur = () => { pressed.clear(); queuedDirection = undefined; };
-    const cancel = () => { drag = undefined; hover = undefined; };
+    const cancel = () => { pan = undefined; stroke = undefined; hover = undefined; };
     const leave = () => { hover = undefined; };
-    const menu = (event: MouseEvent) => {
-      event.preventDefault();
-      if (event.button !== 2) return;
-      element.focus({ preventScroll: true });
-      markAt(event, true);
-    };
+    const menu = (event: MouseEvent) => event.preventDefault();
     element.addEventListener('pointerdown', down);
     element.addEventListener('pointermove', move);
     element.addEventListener('pointerup', up);

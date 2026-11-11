@@ -58,24 +58,39 @@ test('two walkers customize, join via invite, mark together, and share a victory
     expect(available).toBeGreaterThanOrEqual(0);
     const empty = latest.game!.view.cells.findIndex((mark, i) => mark === 0 && latest.game!.puzzle.solution[i] === 0);
     if (empty >= 0) {
-      await board.click({ position: position(empty), button: 'right' });
+      await board.click({ position: position(empty) });
       await expect.poll(async () => (await store.read(code))?.game?.marks[empty]).toBe(2);
-      await board.click({ position: position(empty), button: 'right' });
+      await board.click({ position: position(empty) });
       await expect.poll(async () => (await store.read(code))?.game?.marks[empty]).toBe(0);
     }
     await board.click({ position: position(available), button: 'right' });
+    expect((await store.read(code))?.game?.lives).toBe(latest.game!.lives);
+    await board.click({ position: position(available) });
     await expect(guest.getByText((latest.game!.lives! - 1) + ' / 3', { exact: true })).toBeVisible();
     expect((await store.read(code))?.game?.marks[available]).toBe(0);
-    await board.click({ position: position(available) });
-    await expect.poll(async () => (await store.read(code))?.game?.marks[available]).toBe(1);
     await guest.reload();
     await expect(guest.getByLabel(/Nonogram board/)).toBeVisible();
 
+    async function currentWalker() {
+      return (await store.read(code))!.sessions.find(session => session.player.profile.name === 'Fern')!.player;
+    }
     for (const [index, value] of latest.game!.puzzle.solution.entries()) {
-      const current = (await store.read(code))!;
-      if (Number(current.game!.marks[index] === 1) !== value) {
-        await board.click({ position: position(index) });
-        await expect.poll(async () => Number((await store.read(code))?.game?.marks[index] === 1)).toBe(value);
+      if (!value || (await store.read(code))?.game?.marks[index] === 1) continue;
+      const x = index % 5;
+      const y = Math.floor(index / 5);
+      let walker = await currentWalker();
+      while (walker.position.x !== x || walker.position.y !== y) {
+        const { x: oldX, y: oldY } = walker.position;
+        const key = oldX !== x ? (oldX < x ? 'ArrowRight' : 'ArrowLeft') : (oldY < y ? 'ArrowDown' : 'ArrowUp');
+        await board.press(key);
+        await expect.poll(async () => (await currentWalker()).position).not.toEqual({ x: oldX, y: oldY });
+        walker = await currentWalker();
+      }
+      await board.press('q');
+      await expect.poll(async () => (await store.read(code))?.game?.marks[index]).toBe(1);
+      if ((await store.read(code))?.phase === 'playing') {
+        await board.press('q');
+        await expect.poll(async () => (await currentWalker()).mode).toBe('walk');
       }
     }
     await expect(host.getByRole('dialog', { name: 'Puzzle Complete!' })).toBeVisible();
@@ -104,7 +119,7 @@ test('a 60-cell board can be panned, fitted, and centered', async ({ page }) => 
   await expect(page.getByLabel('Zoom level')).toHaveText('93%');
   const box = (await board.boundingBox())!;
   const before = await board.evaluate(element => (element as HTMLCanvasElement).toDataURL());
-  const row = await page.getByText(/^Row \d+$/).textContent();
+  const row = await page.getByText(/^Row \d+(?: ✓)?$/).textContent();
   const delta = Number(row?.split(' ')[1]) <= 30 ? -180 : 180;
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;

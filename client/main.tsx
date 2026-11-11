@@ -2,8 +2,8 @@ import { createRoot } from 'react-dom/client';
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { clues } from '../shared/clues.ts';
-import { accessories, defaultProfile, defaultSettings, difficulties, hairColors, puzzleLives, shirts, skins, styles } from '../shared/protocol.ts';
-import type { Direction, Line, Mark, Profile, Result, Settings, Snapshot } from '../shared/protocol.ts';
+import { accessories, crossBatchLimit, defaultProfile, defaultSettings, difficulties, hairColors, insideBoard, puzzleLives, shirts, skins, styles } from '../shared/protocol.ts';
+import type { Direction, Line, Mark, Point, Profile, Result, Settings, Snapshot } from '../shared/protocol.ts';
 import { Avatar } from './sprite.tsx';
 import { BoardCanvas } from './Board.tsx';
 import type { BoardControls } from './Board.tsx';
@@ -28,8 +28,8 @@ function Controls({ compact = false }: { compact?: boolean }) {
   return <div className={'controls-strip' + (compact ? ' compact' : '')}>
     <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</span>
     <span><kbd>Q</kbd> Walk / Fill</span>
-    <span><kbd>Click</kbd> Fill</span>
-    <span><kbd>Right click</kbd> Mark X</span>
+    <span><kbd>Left click / drag</kbd> Mark X</span>
+    <span><kbd>Middle drag</kbd> Pan</span>
   </div>;
 }
 function Dialog({ title, close, children }: { title: string; close(): void; children: ReactNode }) {
@@ -156,6 +156,10 @@ function App() {
   const [zoom, setZoom] = useState(100);
   const [copied, setCopied] = useState('');
   const [muted, setMuted] = useState(() => localStorage.getItem('gridwalkers:mute') !== 'false');
+  const [dark, setDark] = useState(() => {
+    const saved = localStorage.getItem('gridwalkers:theme');
+    return saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  });
   const [reduced, setReduced] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [seenVictory, setSeenVictory] = useState('');
   const [lobbyBoard, setLobbyBoard] = useState('');
@@ -264,6 +268,27 @@ function App() {
     if (isSolo) { solo.move(direction); return; }
     if (boardId && connected && socket.connected) socket.volatile.emit('player:move', { direction, boardId });
   }
+  async function cross(points: Point[]) {
+    if (isSolo) { solo.cross(points); return; }
+    try {
+      for (let i = 0; i < points.length; i += crossBatchLimit) {
+        const current = connection.live.current;
+        if (!socket.connected || current?.phase !== 'playing' || current.board?.id !== boardId || !boardId) return;
+        const result = await socket.timeout(4000).emitWithAck('cell:set', {
+          crosses: points.slice(i, i + crossBatchLimit), boardId, revision: current.revision, actionId: crypto.randomUUID(),
+        });
+        if (!result.ok) { feedback(null, result); return; }
+      }
+    } catch { setError('The room service did not respond. Try again.'); connection.request(); }
+  }
+  function grid(gridOnly: boolean) {
+    if (isSolo) solo.grid(gridOnly);
+    else if (boardId && socket.connected) socket.emit('player:grid', { boardId, gridOnly });
+  }
+  function theme(value: boolean) {
+    setDark(value);
+    localStorage.setItem('gridwalkers:theme', value ? 'dark' : 'light');
+  }
   function toggle() {
     if (isSolo) { solo.toggle(); return; }
     if (boardId && socket.connected && connected) {
@@ -280,23 +305,24 @@ function App() {
 
   const inviteLink = connection.room ? new URL('/room/' + connection.room.code, location.origin).href : '';
   const activeCount = room?.players.filter(player => player.connected).length ?? 0;
-  return <div data-reduced-motion={reduced || undefined}>
+  return <div className="app-shell" data-theme={dark ? 'dark' : 'light'} data-reduced-motion={reduced || undefined}>
     <header className="header"><div className="header-inner">
       <div className="brand-button"><Logo/></div>
       {room && <div className="top-meta"><span className="room-tag">{isSolo ? 'Solo' : room.code}</span>
         {phase !== 'lobby' && phase !== 'generating' && <><Timer start={room.startedAt} finish={room.finishedAt}/><span>{room.settings.width} × {room.settings.height}</span><span>{cap(room.settings.difficulty)}</span></>}
         {!isSolo && <span><i className="presence online"/> {activeCount}/4 online</span>}
       </div>}
+      <div className="header-actions"><button type="button" className="header-button" aria-pressed={dark} onClick={() => theme(!dark)}>Dark mode</button>
       <button className="header-button" onClick={room ? openSettings : () => setDialog('profile')}>
         {room ? <><span aria-hidden="true">⚙</span> Settings</> : <><Avatar profile={profile} size={26}/> My character</>}
-      </button>
+      </button></div>
     </div></header>
 
     {!room && <main className="landing">
       <section className="hero">
         <div className="hero-copy">
           <h1>Play a nonogram</h1>
-          <p>Solve a grid on your own or with up to three friends. Mark cells with the mouse or by walking in Fill mode.</p>
+          <p>Solve a grid on your own or with up to three friends. Walk in Fill mode to fill cells, and click or drag to cross them out.</p>
           <div className="hero-actions">
             <button className="primary create-button" onClick={openSolo}>Play Solo</button>
             <button className="create-button" onClick={() => { setError(''); setDialog('create'); }}>Create Room</button>
@@ -341,7 +367,7 @@ function App() {
     {room?.board && (playing || (ended && !waiting)) && <main className="game">
       {!connected && <div className="connection-note" role="status">{error || 'Reconnecting to the room…'}</div>}
       <div className="game-grid">
-        <section className="board-frame"><BoardCanvas room={room} id={id} controls={controls} reduced={reduced} change={change} move={move} toggle={toggle}
+        <section className="board-frame"><BoardCanvas room={room} id={id} controls={controls} reduced={reduced} dark={dark} change={change} cross={cross} move={move} toggle={toggle}
           enabled={playing && connected && !dialog} onZoom={setZoom} optimistic={optimistic}/></section>
         <aside className="game-sidebar">
           <section className="panel game-panel">
@@ -350,10 +376,11 @@ function App() {
               <strong>{(me?.mode ?? 'walk').toUpperCase()}</strong><kbd>Q</kbd>
             </button>
             <p className="muted">{me?.mode === 'fill' ? 'Walking fills cells.' : 'Walk without changing cells.'}</p>
-            {me && <div className="focused">
+            {me && insideBoard(me.position, room.settings) && <div className="focused">
               <Clue label={'Row ' + (me.position.y + 1)} values={room.board.rows[me.position.y]} state={room.board.rowState[me.position.y]}/>
               <Clue label={'Column ' + (me.position.x + 1)} values={room.board.columns[me.position.x]} state={room.board.columnState[me.position.x]}/>
             </div>}
+            {me && !insideBoard(me.position, room.settings) && <p className="muted">Outside the grid</p>}
           </section>
           <section className="panel game-panel camera"><h2>Board view</h2><div className="zoom">
             <button className="icon" aria-label="Zoom out" onClick={() => controls.current?.camera('out')}>−</button>
@@ -399,6 +426,8 @@ function App() {
         });
       }}><SettingsFields settings={settings} set={setSettings}/><button className="primary full-width" disabled={!connected}>Save board settings</button></form>}
       <div className="toggles">
+        {playing && <label><input type="checkbox" checked={me?.gridOnly ?? false} onChange={e => grid(e.target.checked)}/> Grid movement only</label>}
+        <label><input type="checkbox" checked={dark} onChange={e => theme(e.target.checked)}/> Dark mode</label>
         <label><input type="checkbox" checked={!muted} onChange={e => { setMuted(!e.target.checked); localStorage.setItem('gridwalkers:mute', String(!e.target.checked)); }}/> Play completion sound</label>
         <label><input type="checkbox" checked={reduced} onChange={e => setReduced(e.target.checked)}/> Reduce motion</label>
       </div>

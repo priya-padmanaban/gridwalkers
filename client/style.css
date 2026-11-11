@@ -15,6 +15,9 @@
   --serif: 'Instrument Serif', Georgia, serif;
 }
 body { margin: 0; min-width: 320px; }
+.app-shell { min-height: 100dvh; }
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.header-button[aria-pressed=true] { border-color: #7b9d88; }
 button, input, select { font: inherit; }
 button {
   cursor: pointer; border: 1px solid var(--border); background: #fffdf6; color: var(--ink);
@@ -184,3 +187,44 @@ dialog::backdrop { background: #1c3b2f85; backdrop-filter: blur(3px); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+[data-theme=dark] {
+  color-scheme: dark;
+  --ink: #e0ebe3;
+  --muted: #a5b8ac;
+  --border: #415248;
+  --paper: #232f28;
+  --green: #386b51;
+  color: var(--ink);
+  background: #19221e;
+}
+[data-theme=dark] .header,
+[data-theme=dark] .board-frame { background: #1c2721; border-color: var(--border); }
+[data-theme=dark] button:not(.primary),
+[data-theme=dark] kbd,
+[data-theme=dark] .join-form,
+[data-theme=dark] .join-form button { background: var(--paper); color: var(--ink); border-color: var(--border); }
+[data-theme=dark] button:not(.primary):hover:not(:disabled) { background: #34473c; }
+[data-theme=dark] .room-tag,
+[data-theme=dark] .focus-clue b,
+[data-theme=dark] .code-box,
+[data-theme=dark] .player-avatar,
+[data-theme=dark] .profile-preview { background-color: #293c31; color: var(--ink); border-color: var(--border); }
+[data-theme=dark] .focus-clue .grey-clue,
+[data-theme=dark] .eyebrow,
+[data-theme=dark] .controls-strip,
+[data-theme=dark] input::placeholder { color: var(--muted); }
+[data-theme=dark] .example-cells { background: #222e28; border-color: #81968a; }
+[data-theme=dark] .example-cells i { border-color: #526359; }
+[data-theme=dark] .example-cells i.filled { background: #6b9b7c; }
+[data-theme=dark] .example-cells i:nth-child(10n + 5) { border-right-color: #81968a; }
+[data-theme=dark] .example-cells i:nth-child(n + 41):nth-child(-n + 50) { border-bottom-color: #81968a; }
+[data-theme=dark] button.mode.fill { background: #66512a; color: #fff1c7; border-color: #a38948; }
+[data-theme=dark] .players li,
+[data-theme=dark] dialog { border-color: var(--border); }
+[data-theme=dark] .error,
+[data-theme=dark] .lives[data-low=true] { color: #ffa99b; }
+[data-theme=dark] .connection-note { color: #f8deae; border-color: #8c7043; background: #4a3921; }
+[data-theme=dark] .profile-preview { background-image: radial-gradient(#496354 1px, transparent 1px); }
+[data-theme=dark] .victory-picture { background: #293a31; border-color: #526359; }
+[data-theme=dark] .victory-picture .filled { background: #6b9b7c; }

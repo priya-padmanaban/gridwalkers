@@ -1,5 +1,5 @@
 import { puzzleLives } from './protocol.ts';
-import type { Board, EndPhase, Line, Mark, Patch } from './protocol.ts';
+import type { Board, EndPhase, Line, Mark, Patch, Point } from './protocol.ts';
 import { analyze } from './puzzle.ts';
 import type { Puzzle } from './puzzle.ts';
 
@@ -54,6 +54,27 @@ export function attemptMark(game: Game, x: number, y: number, mark: Mark): Pick<
   if (!changes) return;
   const phase: EndPhase | undefined = game.view.rowState.every(line => line.complete) ? 'completed' : undefined;
   return { ...changes, lives, phase };
+}
+
+export function attemptCrosses(game: Game, points: Point[]): ReturnType<typeof attemptMark> {
+  const cells = new Map<number, Mark>();
+  const rows = new Map<number, Line>();
+  const columns = new Map<number, Line>();
+  const visited = new Set<number>();
+  let last: ReturnType<typeof attemptMark>;
+  for (const { x, y } of points) {
+    const index = y * game.view.columns.length + x;
+    if (visited.has(index)) continue;
+    visited.add(index);
+    const change = attemptMark(game, x, y, 2);
+    if (!change) continue;
+    last = change;
+    for (const [i, value] of change.cells) cells.set(i, value);
+    for (const [i, value] of change.rows) rows.set(i, value);
+    for (const [i, value] of change.columns) columns.set(i, value);
+    if (change.phase) break;
+  }
+  if (last) return { ...last, cells: [...cells], rows: [...rows], columns: [...columns] };
 }
 
 export function markCell(game: Game, x: number, y: number, mark: Mark): Pick<Patch, 'cells' | 'rows' | 'columns'> | undefined {

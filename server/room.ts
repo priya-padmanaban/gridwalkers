@@ -1,7 +1,7 @@
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { accessories, difficulties, hairColors, shirts, skins, styles } from '../shared/protocol.ts';
-import type { Mark, Patch, Profile, Settings, Snapshot, Update } from '../shared/protocol.ts';
-import { attemptMark } from '../shared/board.ts';
+import type { Mark, Patch, Point, Profile, Settings, Snapshot, Update } from '../shared/protocol.ts';
+import { attemptCrosses, attemptMark } from '../shared/board.ts';
 import type { Room, Session } from './store.ts';
 
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -121,12 +121,18 @@ export function start(room: Room, now: number) {
 }
 
 export function apply(room: Room, session: Session, x: number, y: number, mark: Mark, now: number, actionId?: string): Patch | undefined {
-  const game = room.game!;
-  const changes = attemptMark(game, x, y, mark);
+  return applyChanges(room, session, attemptMark(room.game!, x, y, mark), now, actionId);
+}
+
+export function applyCrosses(room: Room, session: Session, points: Point[], now: number, actionId: string) {
+  return applyChanges(room, session, attemptCrosses(room.game!, points), now, actionId);
+}
+
+function applyChanges(room: Room, session: Session, changes: ReturnType<typeof attemptMark>, now: number, actionId?: string): Patch | undefined {
   if (!changes) return;
   if (changes.phase) {
     room.phase = changes.phase;
     room.finishedAt = now;
   }
-  return { ...changes, boardId: game.id, revision: ++room.revision, actor: session.player.id, actionId, finishedAt: room.finishedAt };
+  return { ...changes, boardId: room.game!.id, revision: ++room.revision, actor: session.player.id, actionId, finishedAt: room.finishedAt };
 }

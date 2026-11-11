@@ -22,13 +22,15 @@ Use separate browser profiles or private windows when testing different players.
 
 | Control | Action |
 | --- | --- |
-| WASD or arrows | Move one tile, or hold to keep moving |
+| WASD or arrows | Move or hold to glide. Hold two directions to move diagonally. |
 | Q | Switch between Walk and Fill |
-| Left click | Toggle fill on a cell |
-| Right click | Toggle a manual X on a cell |
-| Drag or middle-mouse drag | Pan and pause camera follow |
+| Left click | Toggle a manual X on a cell |
+| Left drag | Add crosses along the drag path |
+| Middle-mouse drag | Pan and pause camera follow |
 | Center on Character | Recenter and resume camera follow |
 | Esc | Close a dialog |
+
+Players can walk up to three tiles outside the board. Turn on **Settings → Grid movement only** to snap inside the board and use horizontal and vertical movement. The **Dark mode** toggle saves your theme preference in the browser.
 
 ## Deployment and backend architecture
 

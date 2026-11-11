@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { attemptMark, newGame } from '../shared/board.ts';
+import { attemptCrosses, attemptMark, newGame } from '../shared/board.ts';
 import type { Game } from '../shared/board.ts';
-import { directions } from '../shared/protocol.ts';
-import type { Direction, Mark, Player, Profile, Settings, Snapshot } from '../shared/protocol.ts';
+import { boardMargin, constrainPosition, directions, insideBoard } from '../shared/protocol.ts';
+import type { Direction, Mark, Player, Point, Profile, Settings, Snapshot } from '../shared/protocol.ts';
 import type { SoloGeneration } from './solo-worker.ts';
 
 export const soloPlayerId = 'solo';
@@ -68,11 +68,13 @@ export function useSolo() {
     }
   }
 
-  function update(player?: Player, cell?: { x: number; y: number; mark: Mark }) {
+  function update(player?: Player, cell?: { x: number; y: number; mark: Mark } | Point[]) {
     const active = session.current;
     if (!active) return;
     const { game, room } = active;
-    const patch = cell && room.phase === 'playing' ? attemptMark(game, cell.x, cell.y, cell.mark) : undefined;
+    const patch = cell && room.phase === 'playing'
+      ? (Array.isArray(cell) ? attemptCrosses(game, cell) : attemptMark(game, cell.x, cell.y, cell.mark))
+      : undefined;
     if (!patch && !player) return;
     const board = patch ? {
       ...game.view, cells: [...game.view.cells], rowState: [...game.view.rowState], columnState: [...game.view.columnState],
@@ -89,13 +91,14 @@ export function useSolo() {
     const room = session.current?.room;
     if (room?.phase !== 'playing') return;
     const player = room.players[0];
-    const x = player.position.x + directions[direction].x;
-    const y = player.position.y + directions[direction].y;
-    if (x < 0 || y < 0 || x >= room.settings.width || y >= room.settings.height) {
+    const delta = directions[direction];
+    if (player.gridOnly && delta.x && delta.y) return;
+    const position = constrainPosition({ x: player.position.x + delta.x, y: player.position.y + delta.y }, room.settings, player.gridOnly ? 0 : boardMargin);
+    if (position.x === player.position.x && position.y === player.position.y) {
       if (player.direction !== direction) update({ ...player, direction });
       return;
     }
-    update({ ...player, position: { x, y }, direction }, player.mode === 'fill' ? { x, y, mark: 1 } : undefined);
+    update({ ...player, position, direction }, player.mode === 'fill' && insideBoard(position, room.settings) ? { ...position, mark: 1 } : undefined);
   }
 
   function toggle() {
@@ -103,12 +106,19 @@ export function useSolo() {
     if (room?.phase !== 'playing') return;
     const player = room.players[0];
     const mode = player.mode === 'walk' ? 'fill' : 'walk';
-    update({ ...player, mode }, mode === 'fill' ? { ...player.position, mark: 1 } : undefined);
+    update({ ...player, mode }, mode === 'fill' && insideBoard(player.position, room.settings) ? { ...player.position, mark: 1 } : undefined);
   }
 
   return {
     room, busy, error, start, cancel, move, toggle,
     change: (x: number, y: number, mark: Mark) => update(undefined, { x, y, mark }),
+    cross: (points: Point[]) => update(undefined, points),
+    grid: (gridOnly: boolean) => {
+      const room = session.current?.room;
+      if (room?.phase !== 'playing') return;
+      const player = room.players[0];
+      update({ ...player, gridOnly, position: gridOnly ? constrainPosition(player.position, room.settings) : player.position });
+    },
     profile: (profile: Profile) => {
       const player = session.current?.room.players[0];
       if (player) update({ ...player, profile });
