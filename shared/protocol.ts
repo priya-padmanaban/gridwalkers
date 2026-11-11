@@ -4,7 +4,8 @@ export type Mode = 'walk' | 'fill';
 export type Mark = 0 | 1 | 2;
 export type Point = { x: number; y: number };
 export type Direction = 'up' | 'down' | 'left' | 'right';
-export const movementInterval = 110;
+export const movementInterval = 150;
+export const puzzleLives = 3;
 export const directions: Record<Direction, Point> = {
   up: { x: 0, y: -1 }, down: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 },
 };
@@ -20,15 +21,17 @@ export type Settings = { width: number; height: number; difficulty: Difficulty; 
 export type Player = { id: string; profile: Profile; color: string; connected: boolean; ready: boolean; position: Point; direction: Direction; mode: Mode };
 export type Line = { complete: boolean; grey: boolean[] };
 export type Board = { id: string; rows: number[][]; columns: number[][]; cells: Mark[]; rowState: Line[]; columnState: Line[] };
-export type Phase = 'lobby' | 'generating' | 'playing' | 'completed';
+export type EndPhase = 'completed' | 'failed';
+export type Phase = 'lobby' | 'generating' | 'playing' | EndPhase;
 export type Snapshot = {
   version: number;
   code: string; settings: Settings; host: string; players: Player[]; phase: Phase; board?: Board;
   revision: number; startedAt?: number; finishedAt?: number; participants: number; progress: number; error?: string;
+  lives?: number;
 };
 export type Patch = {
   boardId: string; revision: number; cells: [number, Mark][]; rows: [number, Line][]; columns: [number, Line][];
-  actor: string; actionId?: string; finishedAt?: number;
+  actor: string; actionId?: string; finishedAt?: number; phase?: EndPhase; lives?: number;
 };
 export type Motion = Pick<Player, 'id' | 'position' | 'direction' | 'mode'> & { boardId: string };
 export type Update =

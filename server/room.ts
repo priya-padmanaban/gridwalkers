@@ -1,7 +1,7 @@
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { accessories, difficulties, hairColors, shirts, skins, styles } from '../shared/protocol.ts';
 import type { Mark, Patch, Profile, Settings, Snapshot, Update } from '../shared/protocol.ts';
-import { markCell } from '../shared/board.ts';
+import { attemptMark } from '../shared/board.ts';
 import type { Room, Session } from './store.ts';
 
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -43,6 +43,7 @@ export function snapshot(room: Room): Snapshot {
     version: room.version, code: room.code, settings: room.settings, host: room.host,
     players: room.sessions.map(({ player }) => player), phase: room.phase,
     board: room.game?.view, revision: room.revision, startedAt: room.startedAt,
+    lives: room.game?.lives,
     finishedAt: room.finishedAt, participants: room.participants.length,
     progress: room.progress, error: room.error,
   };
@@ -121,10 +122,10 @@ export function start(room: Room, now: number) {
 
 export function apply(room: Room, session: Session, x: number, y: number, mark: Mark, now: number, actionId?: string): Patch | undefined {
   const game = room.game!;
-  const changes = markCell(game, x, y, mark);
+  const changes = attemptMark(game, x, y, mark);
   if (!changes) return;
-  if (game.view.rowState.every(line => line.complete)) {
-    room.phase = 'completed';
+  if (changes.phase) {
+    room.phase = changes.phase;
     room.finishedAt = now;
   }
   return { ...changes, boardId: game.id, revision: ++room.revision, actor: session.player.id, actionId, finishedAt: room.finishedAt };

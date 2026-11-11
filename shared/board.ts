@@ -1,8 +1,9 @@
-import type { Board, Line, Mark, Patch } from './protocol.ts';
+import { puzzleLives } from './protocol.ts';
+import type { Board, EndPhase, Line, Mark, Patch } from './protocol.ts';
 import { analyze } from './puzzle.ts';
 import type { Puzzle } from './puzzle.ts';
 
-export type Game = { id: string; puzzle: Puzzle; marks: Mark[]; view: Board };
+export type Game = { id: string; puzzle: Puzzle; marks: Mark[]; view: Board; lives?: number };
 function indices(size: number, start: number, step: number) {
   return Array.from({ length: size }, (_, i) => start + i * step);
 }
@@ -32,13 +33,27 @@ export function newGame(id: string, puzzle: Puzzle): Game {
   const w = puzzle.columns.length;
   const h = puzzle.rows.length;
   const marks = Array<Mark>(w * h).fill(0);
-  const game: Game = { id, puzzle, marks, view: { id, rows: puzzle.rows, columns: puzzle.columns, cells: [...marks], rowState: [], columnState: [] } };
+  const game: Game = { id, puzzle, marks, lives: puzzleLives, view: { id, rows: puzzle.rows, columns: puzzle.columns, cells: [...marks], rowState: [], columnState: [] } };
   game.view.rowState = puzzle.rows.map((clues, y) => ({ complete: complete(game, indices(w, y * w, 1)), grey: clues.map(() => false) }));
   game.view.columnState = puzzle.columns.map((clues, x) => ({ complete: complete(game, indices(h, x, w)), grey: clues.map(() => false) }));
   game.view.cells = marks.map((_, i) => shown(game, i, w));
   game.view.rowState = puzzle.rows.map((clues, y) => partial(game.view, indices(w, y * w, 1), clues, game.view.rowState[y].complete));
   game.view.columnState = puzzle.columns.map((clues, x) => partial(game.view, indices(h, x, w), clues, game.view.columnState[x].complete));
   return game;
+}
+
+export function attemptMark(game: Game, x: number, y: number, mark: Mark): Pick<Patch, 'cells' | 'rows' | 'columns' | 'phase' | 'lives'> | undefined {
+  const lives = game.lives ?? puzzleLives;
+  if (lives <= 0) return;
+  const filled = game.puzzle.solution[y * game.view.columns.length + x] === 1;
+  if ((mark === 1 && !filled) || (mark === 2 && filled)) {
+    game.lives = lives - 1;
+    return { cells: [], rows: [], columns: [], lives: game.lives, phase: game.lives === 0 ? 'failed' : undefined };
+  }
+  const changes = markCell(game, x, y, mark);
+  if (!changes) return;
+  const phase: EndPhase | undefined = game.view.rowState.every(line => line.complete) ? 'completed' : undefined;
+  return { ...changes, lives, phase };
 }
 
 export function markCell(game: Game, x: number, y: number, mark: Mark): Pick<Patch, 'cells' | 'rows' | 'columns'> | undefined {

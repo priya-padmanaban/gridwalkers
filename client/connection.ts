@@ -12,7 +12,7 @@ function patchBoard(room: Snapshot, patch: Patch): Snapshot {
   for (const [index, line] of patch.rows) board.rowState[index] = line;
   for (const [index, line] of patch.columns) board.columnState[index] = line;
   return { ...room, board, revision: patch.revision, finishedAt: patch.finishedAt,
-    phase: patch.finishedAt ? 'completed' : room.phase };
+    lives: patch.lives ?? room.lives, phase: patch.phase ?? (patch.finishedAt ? 'completed' : room.phase) };
 }
 
 export function useConnection(profile: Profile, onRoom: (code: string) => void) {

@@ -154,7 +154,7 @@ export function createGameServer() {
     }));
     socket.on('game:lobby', ack => void answer(ack, async () => {
       await mutate(room => {
-        if (room.phase !== 'completed') throw new Error('Finish the puzzle first.');
+        if (room.phase !== 'completed' && room.phase !== 'failed') throw new Error('Finish the puzzle first.');
         room.phase = 'lobby';
         room.game = undefined;
         room.finishedAt = undefined;
@@ -168,7 +168,8 @@ export function createGameServer() {
     async function launch(play: boolean) {
       const generationId = randomUUID();
       const room = await mutate((room, _, now) => {
-        if (room.phase !== 'lobby' && !(play && room.phase === 'completed')) throw new Error('A game is already in progress.');
+        const ended = room.phase === 'completed' || room.phase === 'failed';
+        if (room.phase !== 'lobby' && !(play && ended)) throw new Error('A game is already in progress.');
         if (play && room.phase === 'lobby' && room.game) { start(room, now); return full(room); }
         room.game = undefined;
         room.startedAt = undefined;

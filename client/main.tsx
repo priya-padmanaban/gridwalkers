@@ -2,7 +2,7 @@ import { createRoot } from 'react-dom/client';
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { clues } from '../shared/clues.ts';
-import { accessories, defaultProfile, defaultSettings, difficulties, hairColors, shirts, skins, styles } from '../shared/protocol.ts';
+import { accessories, defaultProfile, defaultSettings, difficulties, hairColors, puzzleLives, shirts, skins, styles } from '../shared/protocol.ts';
 import type { Direction, Line, Mark, Profile, Result, Settings, Snapshot } from '../shared/protocol.ts';
 import { Avatar } from './sprite.tsx';
 import { BoardCanvas } from './Board.tsx';
@@ -178,8 +178,10 @@ function App() {
   const boardId = room?.board?.id;
   const phase = room?.phase;
   const playing = phase === 'playing' && !!boardId;
-  const victory = phase === 'completed' && !!boardId && seenVictory !== boardId;
-  const waiting = phase === 'completed' && !!boardId && lobbyBoard === boardId;
+  const ended = phase === 'completed' || phase === 'failed';
+  const showResult = ended && !!boardId && seenVictory !== boardId;
+  const waiting = ended && !!boardId && lobbyBoard === boardId;
+  const lives = room?.lives ?? puzzleLives;
   useEffect(() => {
     optimistic.current.clear();
     pending.current.clear();
@@ -336,13 +338,14 @@ function App() {
       </div>
     </main>}
 
-    {room?.board && (playing || (phase === 'completed' && !waiting)) && <main className="game">
+    {room?.board && (playing || (ended && !waiting)) && <main className="game">
       {!connected && <div className="connection-note" role="status">{error || 'Reconnecting to the room…'}</div>}
       <div className="game-grid">
         <section className="board-frame"><BoardCanvas room={room} id={id} controls={controls} reduced={reduced} change={change} move={move} toggle={toggle}
           enabled={playing && connected && !dialog} onZoom={setZoom} optimistic={optimistic}/></section>
         <aside className="game-sidebar">
           <section className="panel game-panel">
+            <div className="lives" data-low={lives <= 1 || undefined} role="status">Lives <strong>{lives} / {puzzleLives}</strong></div>
             <h2>Movement</h2><button key={me?.mode} className={'mode ' + (me?.mode ?? 'walk')} disabled={!playing || !connected} onClick={() => { toggle(); controls.current?.focus(); }}>
               <strong>{(me?.mode ?? 'walk').toUpperCase()}</strong><kbd>Q</kbd>
             </button>
@@ -402,10 +405,10 @@ function App() {
       <div className="settings-actions"><button onClick={() => setDialog('profile')}>Edit character</button><button onClick={leave}>{isSolo ? 'Back to Home' : 'Leave room'}</button></div>
       {error && <p className="error" role="alert">{error}</p>}
     </Dialog>}
-    {victory && !dialog && room.board && <Dialog title="Puzzle Complete!" close={() => setSeenVictory(boardId)}>
-      <div className="victory-picture" style={{ gridTemplateColumns: 'repeat(' + room.settings.width + ', 1fr)', aspectRatio: room.settings.width + ' / ' + room.settings.height }} aria-label="Finished puzzle" role="img">
+    {showResult && !dialog && room.board && <Dialog title={phase === 'failed' ? 'Out of lives' : 'Puzzle Complete!'} close={() => setSeenVictory(boardId)}>
+      {phase === 'failed' ? <p>The puzzle ended after three mistakes.</p> : <div className="victory-picture" style={{ gridTemplateColumns: 'repeat(' + room.settings.width + ', 1fr)', aspectRatio: room.settings.width + ' / ' + room.settings.height }} aria-label="Finished puzzle" role="img">
         {room.board.cells.map((cell, i) => <i className={cell === 1 ? 'filled' : ''} key={i}/>)}
-      </div>
+      </div>}
       <p className="victory-details">{room.settings.width} × {room.settings.height} · {cap(room.settings.difficulty)} · <Timer start={room.startedAt} finish={room.finishedAt}/> · {room.participants} {room.participants === 1 ? 'walker' : 'walkers'}</p>
       <div className="settings-actions">
         {isSolo ? <>

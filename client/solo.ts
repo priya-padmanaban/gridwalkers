@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { markCell, newGame } from '../shared/board.ts';
+import { attemptMark, newGame } from '../shared/board.ts';
 import type { Game } from '../shared/board.ts';
 import { directions } from '../shared/protocol.ts';
 import type { Direction, Mark, Player, Profile, Settings, Snapshot } from '../shared/protocol.ts';
@@ -55,7 +55,7 @@ export function useSolo() {
         const next: Snapshot = {
           code: '', version: 0, revision: 0, settings, host: soloPlayerId, phase: 'playing',
           board: { ...game.view, cells: [...game.view.cells] },
-          players: [player], startedAt: Date.now(), participants: 1, progress: 100,
+          players: [player], startedAt: Date.now(), participants: 1, progress: 100, lives: game.lives,
         };
         session.current = { game, room: next };
         setRoom(next);
@@ -72,15 +72,15 @@ export function useSolo() {
     const active = session.current;
     if (!active) return;
     const { game, room } = active;
-    const patch = cell && room.phase === 'playing' ? markCell(game, cell.x, cell.y, cell.mark) : undefined;
+    const patch = cell && room.phase === 'playing' ? attemptMark(game, cell.x, cell.y, cell.mark) : undefined;
     if (!patch && !player) return;
-    const solved = patch && game.view.rowState.every(line => line.complete);
     const board = patch ? {
       ...game.view, cells: [...game.view.cells], rowState: [...game.view.rowState], columnState: [...game.view.columnState],
     } : room.board;
     active.room = {
       ...room, board, players: player ? [player] : room.players, revision: room.revision + Number(Boolean(patch)),
-      phase: solved ? 'completed' : room.phase, finishedAt: solved ? Date.now() : room.finishedAt,
+      lives: patch?.lives ?? room.lives, phase: patch?.phase ?? room.phase,
+      finishedAt: patch?.phase ? Date.now() : room.finishedAt,
     };
     setRoom(active.room);
   }

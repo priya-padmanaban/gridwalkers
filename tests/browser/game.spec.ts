@@ -56,10 +56,16 @@ test('two walkers customize, join via invite, mark together, and share a victory
     const latest = (await store.read(code))!;
     const available = latest.game!.view.cells.findIndex((mark, i) => mark === 0 && latest.game!.puzzle.solution[i] === 1);
     expect(available).toBeGreaterThanOrEqual(0);
+    const empty = latest.game!.view.cells.findIndex((mark, i) => mark === 0 && latest.game!.puzzle.solution[i] === 0);
+    if (empty >= 0) {
+      await board.click({ position: position(empty), button: 'right' });
+      await expect.poll(async () => (await store.read(code))?.game?.marks[empty]).toBe(2);
+      await board.click({ position: position(empty), button: 'right' });
+      await expect.poll(async () => (await store.read(code))?.game?.marks[empty]).toBe(0);
+    }
     await board.click({ position: position(available), button: 'right' });
-    await expect.poll(async () => (await store.read(code))?.game?.marks[available]).toBe(2);
-    await board.click({ position: position(available), button: 'right' });
-    await expect.poll(async () => (await store.read(code))?.game?.marks[available]).toBe(0);
+    await expect(guest.getByText((latest.game!.lives! - 1) + ' / 3', { exact: true })).toBeVisible();
+    expect((await store.read(code))?.game?.marks[available]).toBe(0);
     await board.click({ position: position(available) });
     await expect.poll(async () => (await store.read(code))?.game?.marks[available]).toBe(1);
     await guest.reload();
@@ -74,6 +80,7 @@ test('two walkers customize, join via invite, mark together, and share a victory
     }
     await expect(host.getByRole('dialog', { name: 'Puzzle Complete!' })).toBeVisible();
     await expect(guest.getByRole('dialog', { name: 'Puzzle Complete!' })).toBeVisible();
+    expect((await store.read(code))?.game?.view.cells.every(cell => cell === 1 || cell === 2)).toBe(true);
     await expect(host.getByRole('button', { name: 'Play Again' })).toBeVisible();
   } finally {
     store.redis.disconnect();

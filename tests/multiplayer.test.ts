@@ -79,9 +79,10 @@ describe.runIf(redisTests)('multiplayer across two Redis-backed servers', () => 
     host.emit('player:move', { direction, boardId });
     await expect.poll(async () => (await publicRoom(guest)).players[0].position).toEqual(dest);
     expect((await publicRoom(guest)).revision).toBe(0);
+    const destinationFilled = (await servers[0].store.read(code))!.game!.puzzle.solution[dest.y * 5 + dest.x];
     host.emit('player:mode', { mode: 'fill', boardId });
-    await expect.poll(async () => (await publicRoom(guest)).board?.cells[dest.y * 5 + dest.x]).toBe(1);
-    host.emit('player:mode', { mode: 'fill', boardId });
+    await expect.poll(async () => (await publicRoom(guest)).revision).toBe(1);
+    expect((await publicRoom(guest)).lives).toBe(destinationFilled ? 3 : 2);
     expect((await publicRoom(host)).revision).toBe(1);
     const activeGame = (await servers[0].store.read(code))!.game!;
     const target = activeGame.puzzle.solution.indexOf(1);
@@ -103,6 +104,7 @@ describe.runIf(redisTests)('multiplayer across two Redis-backed servers', () => 
     await expect.poll(() => updates.filter(notice => notice.update.type === 'patch').length).toBe(2);
     const patches = updates.flatMap(notice => notice.update.type === 'patch' ? [notice.update.patch] : []);
     expect(patches.map(patch => patch.revision)).toEqual([revision + 1, revision + 2]);
+    expect((await publicRoom(host)).lives).toBe(destinationFilled ? 2 : 1);
     expect((await publicRoom(guest)).board).toEqual((await publicRoom(host)).board);
     const guestIdentity = (joins[0] as { ok: true; value: Identity }).value;
     guest.disconnect();
@@ -113,6 +115,7 @@ describe.runIf(redisTests)('multiplayer across two Redis-backed servers', () => 
     const restoredHost = await reconnectedHost.timeout(4000).emitWithAck('room:join', { token: hostToken, code, profile: defaultProfile });
     expect(restoredGuest.ok && restoredGuest.value.id).toBe(guestIdentity.id);
     expect(restoredGuest.ok && restoredGuest.value.room.revision).toBe(revision + 2);
+    expect(restoredGuest.ok && restoredGuest.value.room.lives).toBe(destinationFilled ? 2 : 1);
     expect(restoredHost.ok && restoredHost.value.room.host).toBe(original.id);
     const authoritative = (await servers[0].store.read(code))!;
     for (const [i, value] of authoritative.game!.puzzle.solution.entries()) {

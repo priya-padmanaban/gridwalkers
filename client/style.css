@@ -126,6 +126,9 @@ kbd { display: inline-block; padding: 3px 5px; border: 1px solid #cfd9ca; border
 .game-sidebar { display: grid; align-content: start; gap: 10px; }
 .game-panel { padding: 14px; }
 .game-panel p { font-size: .78rem; margin: 7px 0; }
+.lives { display: flex; justify-content: space-between; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); font-size: .85rem; }
+.lives strong { font-family: var(--mono); }
+.lives[data-low=true] { color: #9c352b; }
 .mode { display: flex; width: 100%; align-items: center; justify-content: space-between; font: 600 .9rem var(--mono); background: #e8f0e2; }
 .mode.fill, .mode.fill:hover { background: #fae4ae; border-color: #d4a258; }
 .mode { animation: appear .23s ease-out; }

@@ -33,10 +33,12 @@ export function BoardCanvas(props: Props) {
     let hover: Point | undefined;
     let drag: { x: number; y: number; pan: boolean; button: number } | undefined;
     const pressed = new Map<string, Direction>();
-    const motion = new Map<string, { x: number; y: number; fromX: number; fromY: number; at: number }>();
+    const motion = new Map<string, { position: Point; moving: boolean }>();
     const flashes = new Map<number, number>();
     let previousCells: Mark[] | undefined;
-    let lastMove = -Infinity;
+    let nextMove = -Infinity;
+    let previousFrame = 0;
+    let queuedDirection: Direction | undefined;
     const scale = () => clamp(camera.tile * 0.56, 10, 19);
 
     function layout() {
@@ -50,10 +52,11 @@ export function BoardCanvas(props: Props) {
       camera.y = bound(camera.y, height - top, h * camera.tile);
     }
     function center(w: number, h: number) {
-      const player = latest.current.room.players.find(p => p.id === latest.current.id);
-      if (player) {
-        camera.x = (width - left) / 2 - (player.position.x + 0.5) * camera.tile;
-        camera.y = (height - top) / 2 - (player.position.y + 0.5) * camera.tile;
+      const { room, id } = latest.current;
+      const position = motion.get(id)?.position ?? room.players.find(p => p.id === id)?.position;
+      if (position) {
+        camera.x = (width - left) / 2 - (position.x + 0.5) * camera.tile;
+        camera.y = (height - top) / 2 - (position.y + 0.5) * camera.tile;
       }
       constrain(w, h);
     }
@@ -85,6 +88,33 @@ export function BoardCanvas(props: Props) {
       latest.current.onZoom(Math.round(camera.tile / 30 * 100));
     }
     props.controls.current = { camera: action, focus: () => element.focus() };
+
+    function step(now: number) {
+      if (!latest.current.enabled || now < nextMove) return;
+      const direction = queuedDirection ?? Array.from(pressed.values()).at(-1);
+      if (!direction) return;
+      queuedDirection = undefined;
+      latest.current.move(direction);
+      nextMove = (now - nextMove < 16 ? nextMove : now) + movementInterval;
+    }
+
+    function glide(room: Snapshot, now: number, reduced: boolean) {
+      const distance = Math.min(50, Math.max(0, now - previousFrame)) / movementInterval;
+      previousFrame = now;
+      for (const { id, position: target, direction } of room.players) {
+        const current = motion.get(id)?.position ?? target;
+        if (reduced) { motion.set(id, { position: target, moving: false }); continue; }
+        const dx = target.x - current.x;
+        const dy = target.y - current.y;
+        // Finish the previous axis first when a turn arrives before a tile is reached.
+        const verticalFirst = directions[direction].x !== 0;
+        const first = Math.min(distance, Math.abs(verticalFirst ? dy : dx));
+        const second = distance - first;
+        const x = current.x + Math.sign(dx) * Math.min(Math.abs(dx), verticalFirst ? second : first);
+        const y = current.y + Math.sign(dy) * Math.min(Math.abs(dy), verticalFirst ? first : second);
+        motion.set(id, { position: { x, y }, moving: x !== current.x || y !== current.y });
+      }
+    }
 
     function lineText(values: number[], status: Line, x: number, y: number, horizontal: boolean, available: number) {
       const slot = Math.min(scale(), available / values.length);
@@ -124,13 +154,10 @@ export function BoardCanvas(props: Props) {
         latest.current.onZoom(Math.round(camera.tile / 30 * 100));
       }
       layout();
+      glide(room, now, reduced);
       if (camera.follow) center(w, h);
       else constrain(w, h);
-      if (enabled && pressed.size && now - lastMove >= movementInterval) {
-        const direction = Array.from(pressed.values()).at(-1)!;
-        latest.current.move(direction);
-        lastMove = now;
-      }
+      if (enabled) step(now);
       if (previousCells && previousCells !== board.cells && !reduced) {
         for (let i = 0; i < board.cells.length; i++) {
           if (board.cells[i] === 1 && previousCells[i] !== 1) flashes.set(i, now);
@@ -195,19 +222,14 @@ export function BoardCanvas(props: Props) {
       }
       for (let x = x0; x <= x1; x++) gridLine(x, w, true);
       for (let y = y0; y <= y1; y++) gridLine(y, h, false);
-      if (room.phase === 'playing') {
+      if (room.phase === 'playing' || room.phase === 'failed') {
         for (const player of room.players.filter(player => player.connected).sort((a, b) => Number(a.id === id) - Number(b.id === id))) {
-          const { x, y } = player.position;
-          let track = motion.get(player.id);
-          if (!track) track = { x, y, fromX: x, fromY: y, at: now - 120 };
-          if (track.x !== x || track.y !== y) track = { x, y, fromX: track.x, fromY: track.y, at: now };
-          motion.set(player.id, track);
-          const a = reduced ? 1 : Math.min(1, (now - track.at) / 105);
-          const px = ox + (track.fromX + (x - track.fromX) * a) * t;
-          const py = oy + (track.fromY + (y - track.fromY) * a) * t;
+          const track = motion.get(player.id)!;
+          const px = ox + track.position.x * t;
+          const py = oy + track.position.y * t;
           const size = Math.max(9, t * 0.89);
           sprite(ctx, player.profile, player.direction, px + (t - size) / 2, py + t - size - t * 0.13, size,
-            a < 1 ? (Math.floor(now / 75) % 2 ? 1 : -1) : 0, player.mode === 'fill');
+            track.moving ? (Math.floor(now / 75) % 2 ? 1 : -1) : 0, player.mode === 'fill');
           ctx.fillStyle = player.color;
           ctx.fillRect(px + t * 0.22, py + t - 3, t * 0.56, 2);
           if (t >= 27) {
@@ -252,6 +274,7 @@ export function BoardCanvas(props: Props) {
       if (x >= 0 && y >= 0 && x < latest.current.room.settings.width && y < latest.current.room.settings.height) return { x, y };
     }
     function down(event: PointerEvent) {
+      if (event.button !== 0 && event.button !== 1) return;
       if (event.button === 1) event.preventDefault();
       element.focus({ preventScroll: true });
       element.setPointerCapture(event.pointerId);
@@ -259,7 +282,7 @@ export function BoardCanvas(props: Props) {
     }
     function move(event: PointerEvent) {
       hover = point(event);
-      if (!drag || drag.button === 2) return;
+      if (!drag) return;
       const dx = event.clientX - drag.x;
       const dy = event.clientY - drag.y;
       if (drag.pan || Math.hypot(dx, dy) > 5) {
@@ -269,15 +292,17 @@ export function BoardCanvas(props: Props) {
         drag = { ...drag, x: event.clientX, y: event.clientY, pan: true };
       }
     }
-    function up(event: PointerEvent) {
+    function markAt(event: MouseEvent, cross: boolean) {
       const cell = point(event);
-      if (drag && !drag.pan && cell && latest.current.enabled && (drag.button === 0 || drag.button === 2)) {
-        const { room, optimistic } = latest.current;
-        const index = cell.y * room.settings.width + cell.x;
-        const mark = optimistic.current.get(index) ?? room.board?.cells[index];
-        const next = drag.button === 2 ? (mark === 2 ? 0 : 2) : (mark === 1 ? 0 : 1);
-        latest.current.change(cell.x, cell.y, next);
-      }
+      if (!cell || !latest.current.enabled) return;
+      const { room, optimistic } = latest.current;
+      const index = cell.y * room.settings.width + cell.x;
+      const mark = optimistic.current.get(index) ?? room.board?.cells[index];
+      const requested = cross ? 2 : 1;
+      latest.current.change(cell.x, cell.y, mark === requested ? 0 : requested);
+    }
+    function up(event: PointerEvent) {
+      if (drag && !drag.pan && drag.button === 0 && event.button === 0) markAt(event, false);
       drag = undefined;
     }
     function keydown(event: KeyboardEvent) {
@@ -286,19 +311,24 @@ export function BoardCanvas(props: Props) {
       const direction = keys[key];
       if (direction && Object.hasOwn(directions, direction)) {
         event.preventDefault();
-        if (!pressed.has(key)) {
+        if (!event.repeat && !pressed.has(key)) {
           pressed.set(key, direction);
-          const now = performance.now();
-          if (now - lastMove >= movementInterval - 10) { latest.current.move(direction); lastMove = now; }
+          queuedDirection = direction;
+          step(performance.now());
         }
       }
       if (key === 'q' && !event.repeat) { event.preventDefault(); latest.current.toggle(); }
     }
     const keyup = (event: KeyboardEvent) => { pressed.delete(event.key.toLowerCase()); };
-    const blur = () => pressed.clear();
+    const blur = () => { pressed.clear(); queuedDirection = undefined; };
     const cancel = () => { drag = undefined; hover = undefined; };
     const leave = () => { hover = undefined; };
-    const menu = (event: MouseEvent) => event.preventDefault();
+    const menu = (event: MouseEvent) => {
+      event.preventDefault();
+      if (event.button !== 2) return;
+      element.focus({ preventScroll: true });
+      markAt(event, true);
+    };
     element.addEventListener('pointerdown', down);
     element.addEventListener('pointermove', move);
     element.addEventListener('pointerup', up);

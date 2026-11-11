@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { markCell, newGame } from '../shared/board.ts';
+import { attemptMark, markCell, newGame } from '../shared/board.ts';
 import { describe as puzzleOf } from '../shared/puzzle.ts';
 import { apply, addSession, grace, lease, reconcile, snapshot } from '../server/room.ts';
 import type { Room } from '../server/store.ts';
@@ -11,6 +11,22 @@ function gameOf(rows: string[]) {
 const fixture = () => gameOf(['11000', '00100', '00100', '00010', '00001']);
 
 describe('board mutations', () => {
+  it('rejects wrong fills and crosses, runs out of shared lives, and preserves correct marks', () => {
+    const game = fixture();
+    expect(attemptMark(game, 2, 0, 2)?.cells).toEqual([[2, 2]]);
+    expect(attemptMark(game, 2, 0, 1)).toMatchObject({ lives: 2, cells: [] });
+    expect(game.view.cells[2]).toBe(2);
+    expect(attemptMark(game, 0, 0, 2)).toMatchObject({ lives: 1, cells: [] });
+    expect(attemptMark(game, 0, 0, 1)).toMatchObject({ lives: 1 });
+    expect(attemptMark(game, 1, 0, 1)).toMatchObject({
+      cells: expect.arrayContaining([[1, 1], [3, 2], [4, 2]]), lives: 1,
+    });
+    expect(game.view.rowState[0].complete).toBe(true);
+    expect(attemptMark(game, 0, 0, 2)).toMatchObject({ lives: 0, phase: 'failed', cells: [] });
+    expect(attemptMark(game, 0, 0, 0)).toBeUndefined();
+    expect(game.view.cells.slice(0, 5)).toEqual([1, 1, 2, 2, 2]);
+    expect(fixture().lives).toBe(3);
+  });
   it('toggles explicit fills and crosses, and filling replaces a manual cross', () => {
     const game = fixture();
     expect(markCell(game, 0, 0, 2)?.cells).toEqual([[0, 2]]);
