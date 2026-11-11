@@ -42,13 +42,14 @@ export function newGame(id: string, puzzle: Puzzle): Game {
   return game;
 }
 
-export function attemptMark(game: Game, x: number, y: number, mark: Mark, penalizeIncorrectCrosses = true): Pick<Patch, 'cells' | 'rows' | 'columns' | 'phase' | 'lives'> | undefined {
+export function attemptMark(game: Game, x: number, y: number, mark: Mark, penalizeIncorrectCrosses = true): Pick<Patch, 'cells' | 'rows' | 'columns' | 'phase' | 'lives' | 'mistakes'> | undefined {
   const lives = game.lives ?? puzzleLives;
-  if (lives <= 0) return;
-  const filled = game.puzzle.solution[y * game.view.columns.length + x] === 1;
+  const index = y * game.view.columns.length + x;
+  if (lives <= 0 || game.marks[index] === 1) return;
+  const filled = game.puzzle.solution[index] === 1;
   if ((mark === 1 && !filled) || (mark === 2 && filled && penalizeIncorrectCrosses)) {
     game.lives = lives - 1;
-    return { cells: [], rows: [], columns: [], lives: game.lives, phase: game.lives === 0 ? 'failed' : undefined };
+    return { cells: [], rows: [], columns: [], mistakes: [index], lives: game.lives, phase: game.lives === 0 ? 'failed' : undefined };
   }
   const changes = markCell(game, x, y, mark);
   if (!changes) return;
@@ -61,6 +62,7 @@ export function attemptCrosses(game: Game, points: Point[], penalizeIncorrectCro
   const rows = new Map<number, Line>();
   const columns = new Map<number, Line>();
   const visited = new Set<number>();
+  const mistakes: number[] = [];
   let last: ReturnType<typeof attemptMark>;
   for (const { x, y } of points) {
     const index = y * game.view.columns.length + x;
@@ -69,12 +71,13 @@ export function attemptCrosses(game: Game, points: Point[], penalizeIncorrectCro
     const change = attemptMark(game, x, y, 2, penalizeIncorrectCrosses);
     if (!change) continue;
     last = change;
+    if (change.mistakes) mistakes.push(...change.mistakes);
     for (const [i, value] of change.cells) cells.set(i, value);
     for (const [i, value] of change.rows) rows.set(i, value);
     for (const [i, value] of change.columns) columns.set(i, value);
     if (change.phase) break;
   }
-  if (last) return { ...last, cells: [...cells], rows: [...rows], columns: [...columns] };
+  if (last) return { ...last, cells: [...cells], rows: [...rows], columns: [...columns], mistakes };
 }
 
 export function markCell(game: Game, x: number, y: number, mark: Mark): Pick<Patch, 'cells' | 'rows' | 'columns'> | undefined {

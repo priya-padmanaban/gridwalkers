@@ -46,6 +46,7 @@ export type Snapshot = {
 export type Patch = {
   boardId: string; revision: number; cells: [number, Mark][]; rows: [number, Line][]; columns: [number, Line][];
   actor: string; actionId?: string; finishedAt?: number; phase?: EndPhase; lives?: number;
+  mistakes?: number[];
 };
 export type Motion = Pick<Player, 'id' | 'position' | 'direction' | 'mode' | 'gridOnly'> & { boardId: string };
 export type Update =

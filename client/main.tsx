@@ -1,12 +1,12 @@
 import { createRoot } from 'react-dom/client';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { clues } from '../shared/clues.ts';
 import { accessories, crossBatchLimit, defaultProfile, defaultSettings, difficulties, hairColors, insideBoard, puzzleLives, shirts, skins, styles } from '../shared/protocol.ts';
 import type { Direction, Line, Mark, Point, Profile, PuzzleResult, Result, Settings, Snapshot } from '../shared/protocol.ts';
 import { Avatar } from './sprite.tsx';
-import { BoardCanvas } from './Board.tsx';
-import type { BoardControls } from './Board.tsx';
+import { BoardCanvas, mistakeFlashDuration } from './Board.tsx';
+import type { BoardControls, MistakeFlashes } from './Board.tsx';
 import { useConnection } from './connection.ts';
 import { soloPlayerId, useSolo } from './solo.ts';
 import './style.css';
@@ -164,16 +164,23 @@ function App() {
   });
   const [reduced, setReduced] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [seenVictory, setSeenVictory] = useState('');
+  const [readyFailure, setReadyFailure] = useState<string>();
   const activeBoard = useRef<string | undefined>(undefined);
   const controls = useRef<BoardControls>(null);
   const optimistic = useRef(new Map<number, Mark>());
   const pending = useRef(new Map<number, string>());
+  const mistakes = useRef<MistakeFlashes | undefined>(undefined);
+  const flashMistakes = useCallback((boardId: string, indices: number[]) => {
+    if (mistakes.current?.boardId !== boardId) mistakes.current = { boardId, cells: new Map() };
+    const now = performance.now();
+    for (const index of indices) mistakes.current.cells.set(index, now);
+  }, []);
   const connection = useConnection(profile, code => {
     if (location.pathname !== '/room/' + code) history.pushState(null, '', '/room/' + code);
     setInvite(code);
     setDialog(undefined);
-  });
-  const solo = useSolo();
+  }, flashMistakes);
+  const solo = useSolo(flashMistakes);
   const isSolo = Boolean(solo.room);
   const room = solo.room ?? connection.room;
   const id = isSolo ? soloPlayerId : connection.id;
@@ -186,12 +193,18 @@ function App() {
   const playing = phase === 'playing' && !!boardId;
   const ended = phase === 'completed' || phase === 'failed';
   const showResult = ended && !!boardId && activeBoard.current === boardId && seenVictory !== boardId;
+  const showResultDialog = showResult && (phase !== 'failed' || readyFailure === boardId);
   const lobby = !!room && !isSolo && !playing && !showResult;
   const result: PuzzleResult | undefined = room?.board && (phase === 'completed' || phase === 'failed') ? {
     phase, settings: room.settings, cells: room.board.cells, startedAt: room.startedAt,
     finishedAt: room.finishedAt, participants: room.participants,
   } : room?.lastResult;
   const lives = room?.lives ?? puzzleLives;
+  useEffect(() => {
+    if (!showResult || phase !== 'failed') return;
+    const timeout = setTimeout(() => setReadyFailure(boardId), mistakeFlashDuration);
+    return () => clearTimeout(timeout);
+  }, [boardId, phase, showResult]);
   useEffect(() => {
     optimistic.current.clear();
     pending.current.clear();
@@ -388,7 +401,7 @@ function App() {
       {!connected && <div className="connection-note" role="status">{error || 'Reconnecting to the room…'}</div>}
       <div className="game-grid">
         <section className="board-frame"><BoardCanvas room={room} id={id} controls={controls} reduced={reduced} dark={dark} change={change} cross={cross} move={move} toggle={toggle}
-          enabled={playing && connected && !dialog} onZoom={setZoom} optimistic={optimistic}/></section>
+          enabled={playing && connected && !dialog} onZoom={setZoom} optimistic={optimistic} mistakes={mistakes}/></section>
         <aside className="game-sidebar">
           <section className="panel game-panel">
             <div className="lives" data-low={lives <= 1 || undefined} role="status">Lives <strong>{lives} / {puzzleLives}</strong></div>
@@ -458,7 +471,7 @@ function App() {
       <div className="settings-actions"><button onClick={() => setDialog('profile')}>Edit character</button>{isSolo && <button onClick={leave}>Back to Home</button>}</div>
       {error && <p className="error" role="alert">{error}</p>}
     </Dialog>}
-    {result && ((showResult && !dialog) || dialog === 'result') && <Dialog
+    {result && ((showResultDialog && !dialog) || dialog === 'result') && <Dialog
       title={result.phase === 'failed' ? 'Out of lives' : 'Puzzle Complete!'}
       close={() => { if (boardId) setSeenVictory(boardId); setDialog(undefined); }}>
       {result.phase === 'failed' && <p>The puzzle ended after three mistakes.</p>}

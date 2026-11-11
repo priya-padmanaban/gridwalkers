@@ -4,7 +4,7 @@ Gridwalkers is a nonogram for one to four players. Solve a grid by walking over 
 
 **Play Solo** generates and runs a puzzle in your browser. It uses no room, WebSocket, or Redis connection. Solo progress lasts until you leave the game or reload.
 
-Each puzzle starts with three lives. In multiplayer, the room shares them. Filling an empty cell or crossing a cell that needs a fill costs one life and leaves the cell as it was. Walk mode and clearing a mark cost no lives. Completed rows and columns automatically cross their remaining empty cells.
+Each puzzle starts with three lives. In multiplayer, the room shares them. Filling an empty cell costs one life. Crossing a cell that needs a fill costs one life when cross penalties are enabled. Mistake squares flash red. Confirmed fills are locked, and completed rows and columns automatically cross their remaining empty cells.
 
 ## Run locally
 

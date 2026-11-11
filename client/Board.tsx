@@ -6,10 +6,13 @@ import { sprite } from './sprite.tsx';
 
 export type CameraAction = 'fit' | 'center' | 'in' | 'out';
 export type BoardControls = { camera(action: CameraAction): void; focus(): void };
+export type MistakeFlashes = { boardId: string; cells: Map<number, number> };
+export const mistakeFlashDuration = 500;
 type Props = {
   room: Snapshot; id: string; controls: RefObject<BoardControls | null>; reduced: boolean;
   change(x: number, y: number, mark: Mark): void; cross(points: Point[]): void; move(direction: Direction): void; toggle(): void;
   enabled: boolean; dark: boolean; onZoom(zoom: number): void; optimistic: MutableRefObject<Map<number, Mark>>;
+  mistakes: RefObject<MistakeFlashes | undefined>;
 };
 const keys: Record<string, Direction> = { w: 'up', a: 'left', s: 'down', d: 'right', arrowup: 'up', arrowleft: 'left', arrowdown: 'down', arrowright: 'right' };
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -172,7 +175,7 @@ export function BoardCanvas(props: Props) {
     }
     function render(now: number) {
       frame = requestAnimationFrame(render);
-      const { room, reduced, dark, id, optimistic } = latest.current;
+      const { room, reduced, dark, id, optimistic, mistakes } = latest.current;
       if (!room.board) return;
       const board = room.board;
       const { width: w, height: h } = room.settings;
@@ -210,6 +213,10 @@ export function BoardCanvas(props: Props) {
       }
       previousCells = board.cells;
       for (const [i, at] of flashes) if (now - at > 350) flashes.delete(i);
+      const redFlashes = mistakes.current?.boardId === boardId ? mistakes.current.cells : undefined;
+      if (redFlashes) {
+        for (const [i, at] of redFlashes) if (now - at >= mistakeFlashDuration) redFlashes.delete(i);
+      }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = dark ? '#19221e' : '#edf0e4';
       ctx.fillRect(0, 0, width, height);
@@ -227,7 +234,7 @@ export function BoardCanvas(props: Props) {
       const me = room.players.find(player => player.id === id);
       for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
         const i = y * w + x;
-        const actual = optimistic.current.get(i) ?? board.cells[i];
+        const actual = board.cells[i] === 1 ? 1 : optimistic.current.get(i) ?? board.cells[i];
         const mark = actual === 0 && stroke && stroke.cells.size > 1 && stroke.cells.has(i) ? 2 : actual;
         const px = ox + x * t;
         const py = oy + y * t;
@@ -255,6 +262,12 @@ export function BoardCanvas(props: Props) {
         const flash = flashes.get(i);
         if (flash !== undefined) {
           ctx.fillStyle = 'rgba(255,215,133,' + (1 - (now - flash) / 350) * 0.66 + ')';
+          ctx.fillRect(px, py, t, t);
+        }
+        const mistake = redFlashes?.get(i);
+        if (mistake !== undefined) {
+          const opacity = reduced ? 0.8 : 0.85 * clamp(1 - (now - mistake) / mistakeFlashDuration, 0, 1);
+          ctx.fillStyle = 'rgba(225,47,61,' + opacity + ')';
           ctx.fillRect(px, py, t, t);
         }
       }
@@ -369,6 +382,7 @@ export function BoardCanvas(props: Props) {
       if (cells.size > 1) { cross([...cells.values()]); return; }
       if (!cell) return;
       const index = cell.y * room.settings.width + cell.x;
+      if (room.board?.cells[index] === 1) return;
       const mark = optimistic.current.get(index) ?? room.board?.cells[index];
       change(cell.x, cell.y, mark === 2 ? 0 : 2);
     }

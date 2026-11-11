@@ -7,7 +7,7 @@ import type { SoloGeneration } from './solo-worker.ts';
 
 export const soloPlayerId = 'solo';
 
-export function useSolo() {
+export function useSolo(flashMistakes: (boardId: string, cells: number[]) => void) {
   const [room, setRoom] = useState<Snapshot>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -76,6 +76,7 @@ export function useSolo() {
       ? (Array.isArray(cell) ? attemptCrosses(game, cell) : attemptMark(game, cell.x, cell.y, cell.mark))
       : undefined;
     if (!patch && !player) return;
+    if (patch?.mistakes?.length) flashMistakes(game.id, patch.mistakes);
     const board = patch ? {
       ...game.view, cells: [...game.view.cells], rowState: [...game.view.rowState], columnState: [...game.view.columnState],
     } : room.board;

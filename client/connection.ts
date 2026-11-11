@@ -15,7 +15,7 @@ function patchBoard(room: Snapshot, patch: Patch): Snapshot {
     lives: patch.lives ?? room.lives, phase: patch.phase ?? (patch.finishedAt ? 'completed' : room.phase) };
 }
 
-export function useConnection(profile: Profile, onRoom: (code: string) => void) {
+export function useConnection(profile: Profile, onRoom: (code: string) => void, flashMistakes: (boardId: string, cells: number[]) => void) {
   const [socket] = useState<Socket<ToClient, ToServer>>(() => io({ autoConnect: false, timeout: 6000, path: '/api/ws', addTrailingSlash: false, transports: ['websocket'] }));
   const [room, setRoom] = useState<Snapshot>();
   const [id, setId] = useState('');
@@ -74,6 +74,10 @@ export function useConnection(profile: Profile, onRoom: (code: string) => void) 
       if (!previous || previous.code !== notice.code || notice.version <= previous.version) return;
       latestNotice.current = Math.max(latestNotice.current, notice.version);
       const { update } = notice;
+      const patch = update.type === 'patch' || update.type === 'motion' ? update.patch : undefined;
+      if (patch?.mistakes?.length && patch.boardId === previous.board?.id && patch.revision > previous.revision) {
+        flashMistakes(patch.boardId, patch.mistakes);
+      }
       if (update.type === 'snapshot') { commit({ ...update.room, version: notice.version }); return; }
       if (notice.version !== previous.version + 1) { request(); return; }
       let next = { ...previous, version: notice.version };

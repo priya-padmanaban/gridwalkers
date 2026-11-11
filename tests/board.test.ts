@@ -14,7 +14,7 @@ describe('board mutations', () => {
   it('rejects wrong fills and crosses, runs out of shared lives, and preserves correct marks', () => {
     const game = fixture();
     expect(attemptMark(game, 2, 0, 2)?.cells).toEqual([[2, 2]]);
-    expect(attemptMark(game, 2, 0, 1)).toMatchObject({ lives: 2, cells: [] });
+    expect(attemptMark(game, 2, 0, 1)).toMatchObject({ lives: 2, cells: [], mistakes: [2] });
     expect(game.view.cells[2]).toBe(2);
     expect(attemptMark(game, 0, 0, 2)).toMatchObject({ lives: 1, cells: [] });
     expect(attemptMark(game, 0, 0, 1)).toMatchObject({ lives: 1 });
@@ -22,10 +22,20 @@ describe('board mutations', () => {
       cells: expect.arrayContaining([[1, 1], [3, 2], [4, 2]]), lives: 1,
     });
     expect(game.view.rowState[0].complete).toBe(true);
-    expect(attemptMark(game, 0, 0, 2)).toMatchObject({ lives: 0, phase: 'failed', cells: [] });
+    expect(attemptMark(game, 2, 1, 2)).toMatchObject({ lives: 0, phase: 'failed', cells: [], mistakes: [7] });
     expect(attemptMark(game, 0, 0, 0)).toBeUndefined();
     expect(game.view.cells.slice(0, 5)).toEqual([1, 1, 2, 2, 2]);
     expect(fixture().lives).toBe(3);
+  });
+  it('locks confirmed fills and reports each life-losing cell in a drag', () => {
+    const game = fixture();
+    attemptMark(game, 0, 0, 1);
+    expect(attemptMark(game, 0, 0, 0)).toBeUndefined();
+    expect(attemptMark(game, 0, 0, 2, false)).toBeUndefined();
+    expect(attemptCrosses(game, [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 1 }, { x: 2, y: 0 }])).toMatchObject({
+      cells: [[2, 2]], mistakes: [1, 7], lives: 1,
+    });
+    expect(game.view.cells[0]).toBe(1);
   });
   it('allows incorrect single and drag crosses without losing lives when cross penalties are off', () => {
     const game = fixture();
