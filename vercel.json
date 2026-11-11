@@ -1,0 +1,19 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "fluid": true,
+  "framework": "vite",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/ws.ts": {
+      "maxDuration": 300,
+      "includeFiles": "server-build/**"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/room/:code",
+      "destination": "/index.html"
+    }
+  ]
+}
