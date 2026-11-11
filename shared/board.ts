@@ -1,4 +1,4 @@
-import type { Board, Line, Mark, Patch } from '../shared/protocol.ts';
+import type { Board, Line, Mark, Patch } from './protocol.ts';
 import { analyze } from './puzzle.ts';
 import type { Puzzle } from './puzzle.ts';
 

@@ -16,7 +16,7 @@ function patchBoard(room: Snapshot, patch: Patch): Snapshot {
 }
 
 export function useConnection(profile: Profile, onRoom: (code: string) => void) {
-  const [socket] = useState<Socket<ToClient, ToServer>>(() => io({ autoConnect: false, path: '/api/ws', addTrailingSlash: false, transports: ['websocket'] }));
+  const [socket] = useState<Socket<ToClient, ToServer>>(() => io({ autoConnect: false, timeout: 6000, path: '/api/ws', addTrailingSlash: false, transports: ['websocket'] }));
   const [room, setRoom] = useState<Snapshot>();
   const [id, setId] = useState('');
   const [connected, setConnected] = useState(false);
@@ -29,6 +29,8 @@ export function useConnection(profile: Profile, onRoom: (code: string) => void) 
   const active = useRef<string | undefined>(undefined);
   const live = useRef<Snapshot | undefined>(undefined);
   const repairing = useRef(false);
+  const cancelConnect = useRef<(() => void) | undefined>(undefined);
+  const attempt = useRef(0);
   const latestNotice = useRef(0);
   function commit(next: Snapshot) {
     live.current = next;
@@ -89,31 +91,56 @@ export function useConnection(profile: Profile, onRoom: (code: string) => void) 
     const replaced = () => { setConnected(false); setError('This session is active in another tab.'); };
     socket.on('connect', joinActive).on('disconnect', disconnect).on('room:update', update).on('room:replaced', replaced);
     const code = /^\/room\/([A-Z2-9]{6})\/?$/.exec(location.pathname)?.[1];
-    if (code && savedToken(code)) active.current = code;
-    socket.connect();
-    return () => { socket.off(); socket.disconnect(); };
+    if (code && savedToken(code)) {
+      active.current = code;
+      socket.connect();
+    }
+    return () => { cancelConnect.current?.(); socket.off(); socket.disconnect(); };
   }, [socket]);
 
   function enter(settings: Settings | string, chosen = profile) {
-    if (!socket.connected) { setError('Connecting to the room service. Try again in a moment.'); return; }
+    if (busy || cancelConnect.current) return;
+    const currentAttempt = ++attempt.current;
     setBusy(true);
     setError('');
     const secret = typeof settings === 'string' ? savedToken(settings) ?? token() : token();
     const done = (err: Error | null, result?: { ok: true; value: Identity } | { ok: false; error: string }) => {
+      if (currentAttempt !== attempt.current) return;
       setBusy(false);
       if (!err && result?.ok) { accept(result.value, secret); request(); }
-      else setError(result && !result.ok ? result.error : 'The room service did not respond. Try again.');
+      else {
+        if (!active.current) socket.disconnect();
+        setError(result && !result.ok ? result.error : 'The room service did not respond. Try again.');
+      }
     };
-    if (typeof settings === 'string') socket.timeout(7000).emit('room:join', { code: settings, token: secret, profile: chosen }, done);
-    else socket.timeout(7000).emit('room:create', { settings, token: secret, profile: chosen }, done);
+    function send() {
+      cleanup();
+      if (typeof settings === 'string') socket.timeout(7000).emit('room:join', { code: settings, token: secret, profile: chosen }, done);
+      else socket.timeout(7000).emit('room:create', { settings, token: secret, profile: chosen }, done);
+    }
+    function failed(error: Error) { cleanup(); done(error); }
+    function cleanup() {
+      socket.off('connect', send).off('connect_error', failed);
+      cancelConnect.current = undefined;
+    }
+    if (socket.connected) send();
+    else {
+      cancelConnect.current = cleanup;
+      socket.once('connect', send).once('connect_error', failed).connect();
+    }
   }
   function leave() {
-    if (socket.connected) socket.emit('room:leave', () => {});
+    const leaving = ++attempt.current;
+    cancelConnect.current?.();
     active.current = undefined;
     live.current = undefined;
     setRoom(undefined);
     setError('');
-    socket.disconnect().connect();
+    setBusy(false);
+    if (socket.connected) socket.timeout(1000).emit('room:leave', () => {
+      if (leaving === attempt.current) socket.disconnect();
+    });
+    else socket.disconnect();
   }
   return { socket, room, id, connected, error, setError, enter, leave, busy, request, live };
 }

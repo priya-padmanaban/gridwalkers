@@ -1,6 +1,6 @@
-import type { Difficulty, Settings } from '../shared/protocol.ts';
-import { clues } from '../shared/clues.ts';
-export { clues } from '../shared/clues.ts';
+import type { Difficulty, Settings } from './protocol.ts';
+import { clues } from './clues.ts';
+export { clues } from './clues.ts';
 
 export type Puzzle = { solution: number[]; rows: number[][]; columns: number[][] };
 export type Metrics = { passes: number; initial: number; deductions: number; revealed: number[]; slow: number; chain: number };
@@ -169,7 +169,7 @@ function candidate(w: number, h: number, difficulty: Difficulty, attempt: number
   });
 }
 
-export function generate(settings: Settings, limits: { candidates: number; operations: number; ms: number }, progress: (value: number) => void, random = Math.random): Puzzle {
+export function generate(settings: Settings, limits: { candidates: number; operations: number; ms: number; smallExpertFallback?: string }, progress: (value: number) => void, random = Math.random): Puzzle {
   const { width, height, difficulty } = settings;
   const budget = new Budget(limits.operations, Date.now() + limits.ms);
   for (let i = 0; i < limits.candidates; i++) {
@@ -184,8 +184,8 @@ export function generate(settings: Settings, limits: { candidates: number; opera
     if (countSolutions(puzzle, budget) === 1) return puzzle;
   }
   // This curated small expert puzzle is verified by the same solvers.
-  if (width === 5 && height === 5 && difficulty === 'expert') {
-    const solution = Array.from('1100010110000110110001100', Number);
+  if (width === 5 && height === 5 && difficulty === 'expert' && limits.smallExpertFallback) {
+    const solution = Array.from(limits.smallExpertFallback, Number);
     const puzzle = describe(random() < 0.5 ? solution : solution.reverse(), width, height);
     const logical = solve(puzzle, budget);
     if (logical && !logical.cells.includes(-1) && classify(logical.metrics) === difficulty && countSolutions(puzzle, budget) === 1) return puzzle;

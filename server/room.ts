@@ -1,7 +1,7 @@
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { accessories, difficulties, hairColors, shirts, skins, styles } from '../shared/protocol.ts';
 import type { Mark, Patch, Profile, Settings, Snapshot, Update } from '../shared/protocol.ts';
-import { markCell } from './board.ts';
+import { markCell } from '../shared/board.ts';
 import type { Room, Session } from './store.ts';
 
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

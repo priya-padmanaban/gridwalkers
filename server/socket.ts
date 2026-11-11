@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { Server } from 'socket.io';
 import { directions, movementInterval } from '../shared/protocol.ts';
 import type { Ack, Identity, Motion, Snapshot, ToClient, ToServer, Update } from '../shared/protocol.ts';
-import { newGame } from './board.ts';
+import { newGame } from '../shared/board.ts';
 import { generateAsync } from './generation.ts';
 import { addSession, apply, codeOf, digest, full, lease, profileOf, reconcile, roomCode, settingsOf, snapshot, start, tokenOf } from './room.ts';
 import { RoomStore } from './store.ts';

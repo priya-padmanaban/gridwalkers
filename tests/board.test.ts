@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { markCell, newGame } from '../server/board.ts';
-import { describe as puzzleOf } from '../server/puzzle.ts';
+import { markCell, newGame } from '../shared/board.ts';
+import { describe as puzzleOf } from '../shared/puzzle.ts';
 import { apply, addSession, grace, lease, reconcile, snapshot } from '../server/room.ts';
 import type { Room } from '../server/store.ts';
 import { defaultProfile, defaultSettings } from '../shared/protocol.ts';

@@ -1,5 +1,5 @@
 import { describe as suite, expect, it } from 'vitest';
-import { analyze, Budget, classify, clues, countSolutions, describe, generate, solve } from '../server/puzzle.ts';
+import { analyze, Budget, classify, clues, countSolutions, describe, generate, solve } from '../shared/puzzle.ts';
 import { difficulties, defaultSettings } from '../shared/protocol.ts';
 
 const budget = () => new Budget(120_000_000, Date.now() + 6000);
@@ -55,7 +55,8 @@ suite('puzzle validation and generation', () => {
   it.each(difficulties)('generates a logically solved and unique %s puzzle', difficulty => {
     for (const [width, height] of [[5, 5], [13, 17], [60, 60]]) {
       const settings = { ...defaultSettings, width, height, difficulty };
-      const puzzle = generate(settings, { candidates: 1600, operations: 120_000_000, ms: 4500 }, () => {}, randomFrom(85));
+      const limits = { candidates: 1600, operations: 120_000_000, ms: 4500, smallExpertFallback: '0001001110110111000110001' };
+      const puzzle = generate(settings, limits, () => {}, randomFrom(85));
       const result = solve(puzzle, budget())!;
       expect(result.cells).toEqual(puzzle.solution);
       expect(classify(result.metrics)).toBe(difficulty);

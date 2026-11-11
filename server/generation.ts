@@ -1,7 +1,7 @@
 import { Worker } from 'node:worker_threads';
 import { resolve } from 'node:path';
 import type { Settings } from '../shared/protocol.ts';
-import type { Puzzle } from './puzzle.ts';
+import type { Puzzle } from '../shared/puzzle.ts';
 
 export function generateAsync(settings: Settings, progress: (value: number) => void): Promise<Puzzle> {
   const limits = {

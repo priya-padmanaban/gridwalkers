@@ -8,6 +8,7 @@ import { Avatar } from './sprite.tsx';
 import { BoardCanvas } from './Board.tsx';
 import type { BoardControls } from './Board.tsx';
 import { useConnection } from './connection.ts';
+import { soloPlayerId, useSolo } from './solo.ts';
 import './style.css';
 
 const roomRoute = () => /^\/room\/([a-z0-9]{6})\/?$/i.exec(location.pathname)?.[1].toUpperCase() ?? '';
@@ -41,9 +42,9 @@ function Dialog({ title, close, children }: { title: string; close(): void; chil
     </div>
   </dialog>;
 }
-function SettingsFields({ settings, set }: { settings: Settings; set(value: Settings): void }) {
+function SettingsFields({ settings, set, solo = false }: { settings: Settings; set(value: Settings): void; solo?: boolean }) {
   return <div className="settings-fields">
-    <label>Room name <span className="muted">(optional)</span><input maxLength={32} placeholder="e.g. Fern Grove" value={settings.name} onChange={e => set({ ...settings, name: e.target.value })}/></label>
+    {!solo && <label>Room name <span className="muted">(optional)</span><input maxLength={32} placeholder="e.g. Fern Grove" value={settings.name} onChange={e => set({ ...settings, name: e.target.value })}/></label>}
     <div className="field-row">
       <label>Width<input type="number" min={5} max={60} required value={settings.width || ''} onChange={e => set({ ...settings, width: Number(e.target.value) })}/></label>
       <label>Height<input type="number" min={5} max={60} required value={settings.height || ''} onChange={e => set({ ...settings, height: Number(e.target.value) })}/></label>
@@ -150,7 +151,7 @@ function playChime() {
 function App() {
   const [profile, setProfile] = useState(readProfile);
   const [invite, setInvite] = useState(roomRoute);
-  const [dialog, setDialog] = useState<'create' | 'profile' | 'join' | 'settings'>();
+  const [dialog, setDialog] = useState<'solo' | 'create' | 'profile' | 'join' | 'settings'>();
   const [settings, setSettings] = useState<Settings>({ ...defaultSettings });
   const [zoom, setZoom] = useState(100);
   const [copied, setCopied] = useState('');
@@ -166,7 +167,12 @@ function App() {
     setInvite(code);
     setDialog(undefined);
   });
-  const { room, id, socket, error, setError, connected, busy } = connection;
+  const solo = useSolo();
+  const isSolo = Boolean(solo.room);
+  const room = solo.room ?? connection.room;
+  const id = isSolo ? soloPlayerId : connection.id;
+  const connected = isSolo || connection.connected;
+  const { socket, error, setError, busy } = connection;
   const me = room?.players.find(player => player.id === id);
   const host = room?.host === id;
   const boardId = room?.board?.id;
@@ -196,7 +202,8 @@ function App() {
     localStorage.setItem('gridwalkers:profile', JSON.stringify(next));
     if (dialog === 'join') connection.enter(invite, next);
     else {
-      if (room && connected) socket.timeout(4000).emit('player:profile', next, feedback);
+      if (isSolo) solo.profile(next);
+      else if (room && connected) socket.timeout(4000).emit('player:profile', next, feedback);
       setDialog(undefined);
     }
   }
@@ -214,8 +221,9 @@ function App() {
     setDialog('join');
   }
   function leave() {
-    connection.leave();
-    history.pushState(null, '', '/');
+    if (isSolo) solo.leave();
+    else connection.leave();
+    if (location.pathname !== '/') history.pushState(null, '', '/');
     setInvite('');
     setDialog(undefined);
   }
@@ -234,6 +242,7 @@ function App() {
   }, [room?.code]);
 
   function change(x: number, y: number, mark: Mark) {
+    if (isSolo) { solo.change(x, y, mark); return; }
     const current = connection.live.current;
     if (!current?.board || !socket.connected || !connected || current.phase !== 'playing') return;
     const index = y * current.settings.width + x;
@@ -250,22 +259,31 @@ function App() {
     });
   }
   function move(direction: Direction) {
+    if (isSolo) { solo.move(direction); return; }
     if (boardId && connected && socket.connected) socket.volatile.emit('player:move', { direction, boardId });
   }
   function toggle() {
+    if (isSolo) { solo.toggle(); return; }
     if (boardId && socket.connected && connected) {
       const current = connection.live.current?.players.find(player => player.id === id);
       socket.emit('player:mode', { boardId, mode: current?.mode === 'fill' ? 'walk' : 'fill' });
     }
   }
-  const inviteLink = room ? new URL('/room/' + room.code, location.origin).href : '';
+  function openSolo() {
+    connection.leave();
+    if (location.pathname !== '/') history.replaceState(null, '', '/');
+    setInvite('');
+    setDialog('solo');
+  }
+
+  const inviteLink = connection.room ? new URL('/room/' + connection.room.code, location.origin).href : '';
   const activeCount = room?.players.filter(player => player.connected).length ?? 0;
   return <div data-reduced-motion={reduced || undefined}>
     <header className="header"><div className="header-inner">
       <div className="brand-button"><Logo/></div>
-      {room && <div className="top-meta"><span className="room-tag">{room.code}</span>
+      {room && <div className="top-meta"><span className="room-tag">{isSolo ? 'Solo' : room.code}</span>
         {phase !== 'lobby' && phase !== 'generating' && <><Timer start={room.startedAt} finish={room.finishedAt}/><span>{room.settings.width} × {room.settings.height}</span><span>{cap(room.settings.difficulty)}</span></>}
-        <span><i className="presence online"/> {activeCount}/4 online</span>
+        {!isSolo && <span><i className="presence online"/> {activeCount}/4 online</span>}
       </div>}
       <button className="header-button" onClick={room ? openSettings : () => setDialog('profile')}>
         {room ? <><span aria-hidden="true">⚙</span> Settings</> : <><Avatar profile={profile} size={26}/> My character</>}
@@ -278,7 +296,8 @@ function App() {
           <h1>Play a nonogram</h1>
           <p>Solve a grid on your own or with up to three friends. Mark cells with the mouse or by walking in Fill mode.</p>
           <div className="hero-actions">
-            <button className="primary create-button" onClick={() => { setError(''); setDialog('create'); }}>Create Room</button>
+            <button className="primary create-button" onClick={openSolo}>Play Solo</button>
+            <button className="create-button" onClick={() => { setError(''); setDialog('create'); }}>Create Room</button>
             <form className="join-form" onSubmit={join}>
               <label className="sr-only" htmlFor="invite-code">Invite code</label>
               <input id="invite-code" autoComplete="off" spellCheck={false} placeholder="Invite code" value={invite} maxLength={6} onChange={e => setInvite(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}/>
@@ -339,13 +358,23 @@ function App() {
             <button className="icon" aria-label="Zoom in" onClick={() => controls.current?.camera('in')}>+</button>
           </div><div className="camera-actions"><button onClick={() => controls.current?.camera('fit')}>Fit Board</button>
           <button onClick={() => { controls.current?.camera('center'); controls.current?.focus(); }}>Center on Character</button></div></section>
-          <section className="panel game-panel game-players"><h2>Walkers</h2><Players room={room} id={id}/></section>
+          {!isSolo && <section className="panel game-panel game-players"><h2>Walkers</h2><Players room={room} id={id}/></section>}
         </aside>
       </div>
       {error && connected && <div className="connection-note" role="alert">{error}<button className="icon" aria-label="Dismiss error" onClick={() => setError('')}>×</button></div>}
       <Controls compact/>
     </main>}
 
+    {dialog === 'solo' && <Dialog title="Play Solo" close={() => { solo.cancel(); setDialog(undefined); }}>
+      <form onSubmit={event => {
+        event.preventDefault();
+        solo.start({ ...settings, name: '' }, profile, () => setDialog(undefined));
+      }}>
+        <SettingsFields solo settings={settings} set={setSettings}/>
+        {solo.error && <p className="error" role="alert">{solo.error}</p>}
+        <button className="primary full-width" disabled={solo.busy}>{solo.busy ? 'Generating…' : 'Start Puzzle'}</button>
+      </form>
+    </Dialog>}
     {dialog === 'create' && <Dialog title="Create a room" close={() => setDialog(undefined)}>
       <form onSubmit={event => { event.preventDefault(); connection.enter(settings); }}>
         <SettingsFields settings={settings} set={setSettings}/>
@@ -370,7 +399,7 @@ function App() {
         <label><input type="checkbox" checked={!muted} onChange={e => { setMuted(!e.target.checked); localStorage.setItem('gridwalkers:mute', String(!e.target.checked)); }}/> Play completion sound</label>
         <label><input type="checkbox" checked={reduced} onChange={e => setReduced(e.target.checked)}/> Reduce motion</label>
       </div>
-      <div className="settings-actions"><button onClick={() => setDialog('profile')}>Edit character</button><button onClick={leave}>Leave room</button></div>
+      <div className="settings-actions"><button onClick={() => setDialog('profile')}>Edit character</button><button onClick={leave}>{isSolo ? 'Back to Home' : 'Leave room'}</button></div>
       {error && <p className="error" role="alert">{error}</p>}
     </Dialog>}
     {victory && !dialog && room.board && <Dialog title="Puzzle Complete!" close={() => setSeenVictory(boardId)}>
@@ -379,8 +408,13 @@ function App() {
       </div>
       <p className="victory-details">{room.settings.width} × {room.settings.height} · {cap(room.settings.difficulty)} · <Timer start={room.startedAt} finish={room.finishedAt}/> · {room.participants} {room.participants === 1 ? 'walker' : 'walkers'}</p>
       <div className="settings-actions">
-        {host && <button className="primary" onClick={() => { setSeenVictory(boardId); socket.timeout(5000).emit('game:start', feedback); }}>Play Again</button>}
-        <button onClick={() => { setSeenVictory(boardId); if (host) socket.timeout(5000).emit('game:lobby', feedback); else setLobbyBoard(boardId); }}>Return to Lobby</button>
+        {isSolo ? <>
+          <button className="primary" onClick={() => { setSettings(room.settings); setDialog('solo'); }}>Play Again</button>
+          <button onClick={leave}>Back to Home</button>
+        </> : <>
+          {host && <button className="primary" onClick={() => { setSeenVictory(boardId); socket.timeout(5000).emit('game:start', feedback); }}>Play Again</button>}
+          <button onClick={() => { setSeenVictory(boardId); if (host) socket.timeout(5000).emit('game:lobby', feedback); else setLobbyBoard(boardId); }}>Return to Lobby</button>
+        </>}
       </div>
     </Dialog>}
   </div>;

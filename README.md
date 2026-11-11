@@ -1,6 +1,8 @@
 # Gridwalkers
 
-Gridwalkers is a cooperative nonogram for one to four players. Create a private room, share its six-character code, and uncover a picture by walking the grid together.
+Gridwalkers is a nonogram for one to four players. Solve a grid by walking over cells in Fill mode or marking them with your mouse. To play together, create a private room and share its six-character code.
+
+**Play Solo** generates and runs a puzzle in your browser. It uses no room, WebSocket, or Redis connection. Solo progress lasts until you leave the game or reload.
 
 ## Run locally
 
@@ -55,9 +57,9 @@ Deploy the repository as **one Vercel project**. Vercel serves the React/Vite bu
 
 ### Puzzle and rendering decisions
 
-`server/puzzle.ts` uses dynamic programming to find the forced values common to all valid line arrangements. It propagates deductions to a fixed point and scores the solution path using initial forced cells, propagation passes, and deduction depth. A separate bounded search counts solutions up to two. A generated puzzle must pass both solvers and match the requested difficulty.
+`shared/puzzle.ts` uses dynamic programming to find the forced values common to all valid line arrangements. It propagates deductions to a fixed point and scores the solution path using initial forced cells, propagation passes, and deduction depth. A separate bounded search counts solutions up to two. A generated puzzle must pass both solvers and match the requested difficulty. Solo runs this generator in a browser worker. Multiplayer runs it in a server worker and keeps multiplayer solutions on the server.
 
-`server/board.ts` keeps manual marks and derives automatic X marks from completed crossing lines. Removing a supporting fill reopens its line and withdraws only the crosses with no remaining source. A partial clue greys out when every compatible arrangement places that clue's filled run at the same bounded position.
+`shared/board.ts` keeps manual marks and derives automatic X marks from completed crossing lines. Removing a supporting fill reopens its line and withdraws only the crosses with no remaining source. A partial clue greys out when every compatible arrangement places that clue's filled run at the same bounded position.
 
 `client` renders the board, pixel characters, and effects on Canvas. React handles the lobby, camera controls, focused clues, and dialogs. `shared` defines the public Socket.IO protocol.
 

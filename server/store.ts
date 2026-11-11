@@ -1,6 +1,6 @@
 import Redis from 'ioredis';
 import type { Notice, Player, Settings, Snapshot, Update } from '../shared/protocol.ts';
-import type { Game } from './board.ts';
+import type { Game } from '../shared/board.ts';
 
 export type Session = {
   player: Player; tokenHash: string; socket: string; until: number; joined: number;
