@@ -25,7 +25,13 @@ export function settingsOf(value: Settings) {
       || value.height < 5 || value.height > 60 || !difficulties.includes(value.difficulty) || typeof value.name !== 'string') {
     throw new Error('Choose a width and height between 5 and 60 and a valid difficulty.');
   }
-  return { width: value.width, height: value.height, difficulty: value.difficulty, name: value.name.trim().slice(0, 32) };
+  if (value.penalizeIncorrectCrosses !== undefined && typeof value.penalizeIncorrectCrosses !== 'boolean') {
+    throw new Error('Choose whether incorrect crosses cost a life.');
+  }
+  return {
+    width: value.width, height: value.height, difficulty: value.difficulty, name: value.name.trim().slice(0, 32),
+    penalizeIncorrectCrosses: value.penalizeIncorrectCrosses ?? true,
+  };
 }
 export function profileOf(value: Profile): Profile {
   const valid = (i: number, options: unknown[]) => Number.isInteger(i) && i >= 0 && i < options.length;
@@ -139,11 +145,11 @@ export function start(room: Room, now: number) {
 }
 
 export function apply(room: Room, session: Session, x: number, y: number, mark: Mark, now: number, actionId?: string): Patch | undefined {
-  return applyChanges(room, session, attemptMark(room.game!, x, y, mark), now, actionId);
+  return applyChanges(room, session, attemptMark(room.game!, x, y, mark, room.settings.penalizeIncorrectCrosses), now, actionId);
 }
 
 export function applyCrosses(room: Room, session: Session, points: Point[], now: number, actionId: string) {
-  return applyChanges(room, session, attemptCrosses(room.game!, points), now, actionId);
+  return applyChanges(room, session, attemptCrosses(room.game!, points, room.settings.penalizeIncorrectCrosses), now, actionId);
 }
 
 function applyChanges(room: Room, session: Session, changes: ReturnType<typeof attemptMark>, now: number, actionId?: string): Patch | undefined {

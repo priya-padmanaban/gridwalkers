@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attemptMark, markCell, newGame } from '../shared/board.ts';
+import { attemptCrosses, attemptMark, markCell, newGame } from '../shared/board.ts';
 import { describe as puzzleOf } from '../shared/puzzle.ts';
 import { apply, addSession, grace, lease, reconcile, snapshot } from '../server/room.ts';
 import type { Room } from '../server/store.ts';
@@ -26,6 +26,16 @@ describe('board mutations', () => {
     expect(attemptMark(game, 0, 0, 0)).toBeUndefined();
     expect(game.view.cells.slice(0, 5)).toEqual([1, 1, 2, 2, 2]);
     expect(fixture().lives).toBe(3);
+  });
+  it('allows incorrect single and drag crosses without losing lives when cross penalties are off', () => {
+    const game = fixture();
+    expect(attemptMark(game, 0, 0, 2, false)).toMatchObject({ cells: [[0, 2]], lives: 3 });
+    expect(attemptCrosses(game, [{ x: 1, y: 0 }, { x: 2, y: 0 }], false)).toMatchObject({
+      cells: [[1, 2], [2, 2]], lives: 3,
+    });
+    expect(attemptMark(game, 2, 0, 1, false)).toMatchObject({ cells: [], lives: 2 });
+    expect(attemptMark(game, 0, 0, 1, false)?.lives).toBe(2);
+    expect(game.view.cells[0]).toBe(1);
   });
   it('toggles explicit fills and crosses, and filling replaces a manual cross', () => {
     const game = fixture();

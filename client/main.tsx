@@ -52,6 +52,8 @@ function SettingsFields({ settings, set, solo = false }: { settings: Settings; s
         {difficulties.map(d => <option key={d} value={d}>{cap(d)}</option>)}
       </select></label>
     </div>
+    {!solo && <div className="toggles"><label><input type="checkbox" checked={settings.penalizeIncorrectCrosses ?? true}
+      onChange={e => set({ ...settings, penalizeIncorrectCrosses: e.target.checked })}/> Incorrect crosses cost a life</label></div>}
   </div>;
 }
 function Customize({ profile, save, joining }: { profile: Profile; save(profile: Profile): void; joining: boolean }) {

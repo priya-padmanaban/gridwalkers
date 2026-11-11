@@ -42,11 +42,11 @@ export function newGame(id: string, puzzle: Puzzle): Game {
   return game;
 }
 
-export function attemptMark(game: Game, x: number, y: number, mark: Mark): Pick<Patch, 'cells' | 'rows' | 'columns' | 'phase' | 'lives'> | undefined {
+export function attemptMark(game: Game, x: number, y: number, mark: Mark, penalizeIncorrectCrosses = true): Pick<Patch, 'cells' | 'rows' | 'columns' | 'phase' | 'lives'> | undefined {
   const lives = game.lives ?? puzzleLives;
   if (lives <= 0) return;
   const filled = game.puzzle.solution[y * game.view.columns.length + x] === 1;
-  if ((mark === 1 && !filled) || (mark === 2 && filled)) {
+  if ((mark === 1 && !filled) || (mark === 2 && filled && penalizeIncorrectCrosses)) {
     game.lives = lives - 1;
     return { cells: [], rows: [], columns: [], lives: game.lives, phase: game.lives === 0 ? 'failed' : undefined };
   }
@@ -56,7 +56,7 @@ export function attemptMark(game: Game, x: number, y: number, mark: Mark): Pick<
   return { ...changes, lives, phase };
 }
 
-export function attemptCrosses(game: Game, points: Point[]): ReturnType<typeof attemptMark> {
+export function attemptCrosses(game: Game, points: Point[], penalizeIncorrectCrosses = true): ReturnType<typeof attemptMark> {
   const cells = new Map<number, Mark>();
   const rows = new Map<number, Line>();
   const columns = new Map<number, Line>();
@@ -66,7 +66,7 @@ export function attemptCrosses(game: Game, points: Point[]): ReturnType<typeof a
     const index = y * game.view.columns.length + x;
     if (visited.has(index)) continue;
     visited.add(index);
-    const change = attemptMark(game, x, y, 2);
+    const change = attemptMark(game, x, y, 2, penalizeIncorrectCrosses);
     if (!change) continue;
     last = change;
     for (const [i, value] of change.cells) cells.set(i, value);
