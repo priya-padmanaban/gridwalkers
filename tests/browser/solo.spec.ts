@@ -106,3 +106,43 @@ test('left-drag crosses every tile in its path and right-click leaves it alone',
   }
   await expect(page.getByText('3 / 3', { exact: true })).toBeVisible();
 });
+
+test('saves an uploaded GIF and animates its cross on the board', async ({ page }) => {
+  const clues = Array.from({ length: 5 }, () => [1]);
+  const puzzle = { rows: clues, columns: clues, solution: Array.from({ length: 25 }, (_, i) => Number(i % 6 === 0)) };
+  await page.route('**/client/solo-worker.ts*', route => route.fulfill({
+    contentType: 'application/javascript',
+    body: 'self.onmessage = () => self.postMessage(' + JSON.stringify({ puzzle }) + ');',
+  }));
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'My character' }).click();
+  await expect(page.getByRole('button', { name: 'The Rock' })).toBeVisible();
+  await page.getByLabel('Upload image or GIF').setInputFiles('client/assets/the-rock-cross.gif');
+  await expect(page.getByRole('button', { name: 'Custom' })).toHaveAttribute('aria-pressed', 'true');
+  await page.reload();
+  await page.getByRole('button', { name: 'Play Solo' }).click();
+  await page.getByLabel('Width').fill('5');
+  await page.getByLabel('Height').fill('5');
+  await page.getByRole('button', { name: 'Start Puzzle' }).click();
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByRole('button', { name: 'Custom' })).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape');
+
+  const board = page.getByLabel(/Nonogram board/);
+  await expect(page.getByLabel('Zoom level')).toHaveText('113%');
+  const box = (await board.boundingBox())!;
+  const x = 34 + (box.width - 34 - 34 * 5) / 2 + 34 * 1.5;
+  const y = 34 + (box.height - 34 - 34 * 5) / 2 + 34 / 2;
+  await board.click({ position: { x, y } });
+  await page.mouse.move(box.x - 4, box.y - 4);
+  const frames = new Set<string>();
+  await expect.poll(async () => {
+    frames.add(await board.evaluate((element, point) => {
+      const canvas = element as HTMLCanvasElement;
+      const scale = canvas.width / canvas.getBoundingClientRect().width;
+      return canvas.getContext('2d')!.getImageData((point.x - 8) * scale, (point.y - 8) * scale, 16 * scale, 16 * scale).data.join(',');
+    }, { x, y }));
+    return frames.size;
+  }).toBeGreaterThanOrEqual(4);
+});

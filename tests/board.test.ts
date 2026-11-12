@@ -1,7 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { attemptCrosses, attemptMark, markCell, newGame } from '../shared/board.ts';
 import { describe as puzzleOf } from '../shared/puzzle.ts';
-import { apply, applyCrosses, addSession, grace, lease, reconcile, snapshot } from '../server/room.ts';
+import { apply, applyCrosses, addSession, digest, grace, lease, profileOf, reconcile, returnToLobby, snapshot } from '../server/room.ts';
 import type { Room } from '../server/store.ts';
 import { defaultProfile, defaultSettings } from '../shared/protocol.ts';
 
@@ -115,6 +116,24 @@ describe('room authority', () => {
   const makeRoom = (): Room => ({
     code: 'AAAAAA', host: '', settings: { ...defaultSettings, width: 5, height: 5 }, sessions: [], game: fixture(),
     version: 0, revision: 0, phase: 'playing', progress: 100, participants: [],
+  });
+  it('publishes a custom cross image once and preserves it with the finished board', () => {
+    const room = makeRoom();
+    const gif = readFileSync(new URL('../client/assets/the-rock-cross.gif', import.meta.url));
+    const image = 'data:image/gif;base64,' + gif.toString('base64');
+    const style = `upload:${digest(image)}` as const;
+    const profile = profileOf({ ...defaultProfile, crossStyle: style, crossImage: image });
+    expect(() => profileOf({ ...profile, crossImage: image + 'AAAA' })).toThrow();
+    expect(() => profileOf({ ...profile, crossImage: image.replace('image/gif', 'image/svg+xml') })).toThrow();
+    const player = addSession(room, 'socket-a', 'hash-a', profile, 1000);
+    expect(apply(room, player, 2, 0, 2, 1100)).toMatchObject({ crossStyles: { 2: style }, crossImages: { [style]: image } });
+    const second = apply(room, player, 3, 0, 2, 1100);
+    expect(second?.crossStyles).toEqual({ 3: style });
+    expect(second?.crossImages).toBeUndefined();
+    expect(snapshot(room).board?.crossImages?.[style]).toBe(image);
+    room.phase = 'completed';
+    returnToLobby(room);
+    expect(snapshot(room).lastResult?.crossImages?.[style]).toBe(image);
   });
   it('shares each manual cross style and uses the completing player’s style for new automatic crosses', () => {
     const room = makeRoom();

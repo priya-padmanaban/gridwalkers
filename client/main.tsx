@@ -2,13 +2,15 @@ import { createRoot } from 'react-dom/client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { clues } from '../shared/clues.ts';
-import { accessories, crossBatchLimit, defaultProfile, defaultSettings, difficulties, hairColors, insideBoard, puzzleLives, shirts, skins, styles } from '../shared/protocol.ts';
+import { accessories, crossBatchLimit, crossStyleIds, defaultProfile, defaultSettings, difficulties, hairColors, insideBoard, isUploadedCrossStyle, puzzleLives, shirts, skins, styles } from '../shared/protocol.ts';
 import type { CrossStyle, Direction, Line, Mark, Point, Profile, PuzzleResult, Result, Settings, Snapshot } from '../shared/protocol.ts';
 import { Avatar } from './sprite.tsx';
 import { BoardCanvas, mistakeFlashDuration } from './Board.tsx';
 import type { BoardControls, MistakeFlashes } from './Board.tsx';
 import { useConnection } from './connection.ts';
-import { crossStyles, readCrossStyle } from './crossStyles.ts';
+import { crossImageSource, crossStyles, readCrossStyle, readCrossUpload } from './crossStyles.ts';
+import type { CrossUpload } from './crossStyles.ts';
+import { prepareCrossUpload } from './crossMedia.ts';
 import { soloPlayerId, useSolo } from './solo.ts';
 import './style.css';
 
@@ -57,18 +59,45 @@ function SettingsFields({ settings, set, solo = false }: { settings: Settings; s
       onChange={e => set({ ...settings, penalizeIncorrectCrosses: e.target.checked })}/> Incorrect crosses cost a life</label></div>}
   </div>;
 }
-function CrossStylePicker({ value, select }: { value: CrossStyle; select(style: CrossStyle): void }) {
-  return <fieldset className="cross-styles">
+function CrossStylePicker({ value, upload, select }: { value: CrossStyle; upload?: CrossUpload; select(style: CrossStyle, nextUpload?: CrossUpload): Promise<void> }) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState('');
+  async function apply(styleOrFile: CrossStyle | File) {
+    setPending(true);
+    setError('');
+    try {
+      if (typeof styleOrFile === 'string') await select(styleOrFile);
+      else {
+        const nextUpload = await prepareCrossUpload(styleOrFile);
+        await select(nextUpload.style, nextUpload);
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not load this cross image.');
+    } finally {
+      setPending(false);
+    }
+  }
+  return <fieldset className="cross-styles" disabled={pending}>
     <legend>Cross style</legend>
     <div className="cross-style-options">
-      {(Object.keys(crossStyles) as CrossStyle[]).map(style => {
+      {crossStyleIds.map(style => {
         const option = crossStyles[style];
-        return <button key={style} type="button" aria-pressed={value === style} onClick={() => select(style)}>
+        return <button key={style} type="button" aria-pressed={value === style} onClick={() => void apply(style)}>
           {'image' in option ? <img src={option.image} alt="" /> : <span aria-hidden="true">{option.symbol}</span>}
           {option.label}
         </button>;
       })}
+      {upload && <button type="button" aria-pressed={value === upload.style} onClick={() => void apply(upload.style)}>
+        <img src={upload.image} alt="" /> Custom
+      </button>}
     </div>
+    <label className="cross-upload">Upload image or GIF<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={event => {
+      const file = event.currentTarget.files?.[0];
+      event.currentTarget.value = '';
+      if (file) void apply(file);
+    }}/></label>
+    {pending && <p role="status">Updating cross style…</p>}
+    {error && <p className="error" role="alert">{error}</p>}
   </fieldset>;
 }
 
@@ -181,6 +210,8 @@ function App() {
   });
   const [reduced, setReduced] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [crossStyle, setCrossStyle] = useState(readCrossStyle);
+  const [crossUpload, setCrossUpload] = useState(readCrossUpload);
+  const crossImage = crossUpload?.style === crossStyle ? crossUpload.image : undefined;
   const [seenVictory, setSeenVictory] = useState('');
   const [readyFailure, setReadyFailure] = useState<string>();
   const activeBoard = useRef<string | undefined>(undefined);
@@ -193,12 +224,12 @@ function App() {
     const now = performance.now();
     for (const index of indices) mistakes.current.cells.set(index, now);
   }, []);
-  const connection = useConnection({ ...profile, crossStyle }, code => {
+  const connection = useConnection({ ...profile, crossStyle, crossImage }, code => {
     if (location.pathname !== '/room/' + code) history.pushState(null, '', '/room/' + code);
     setInvite(code);
     setDialog(undefined);
   }, flashMistakes);
-  const solo = useSolo(flashMistakes, crossStyle);
+  const solo = useSolo(flashMistakes, crossStyle, crossImage);
   const isSolo = Boolean(solo.room);
   const room = solo.room ?? connection.room;
   const id = isSolo ? soloPlayerId : connection.id;
@@ -214,7 +245,8 @@ function App() {
   const showResultDialog = showResult && (phase !== 'failed' || readyFailure === boardId);
   const lobby = !!room && !isSolo && !playing && !showResult;
   const result: PuzzleResult | undefined = room?.board && (phase === 'completed' || phase === 'failed') ? {
-    phase, settings: room.settings, cells: room.board.cells, crossStyles: room.board.crossStyles, startedAt: room.startedAt,
+    phase, settings: room.settings, cells: room.board.cells, crossStyles: room.board.crossStyles,
+    crossImages: room.board.crossImages, startedAt: room.startedAt,
     finishedAt: room.finishedAt, participants: room.participants,
   } : room?.lastResult;
   const lives = room?.lives ?? puzzleLives;
@@ -247,10 +279,10 @@ function App() {
     const next = { ...value, name: value.name.trim() || 'Walker', crossStyle };
     setProfile(next);
     localStorage.setItem('gridwalkers:profile', JSON.stringify(next));
-    if (dialog === 'join') connection.enter(invite, next);
+    if (dialog === 'join') connection.enter(invite, { ...next, crossImage });
     else {
       if (isSolo) solo.profile(next);
-      else if (room && connected) socket.timeout(4000).emit('player:profile', next, feedback);
+      else if (room && connected) socket.timeout(4000).emit('player:profile', { ...next, crossImage }, feedback);
       setDialog(undefined);
     }
   }
@@ -338,12 +370,18 @@ function App() {
     setDark(value);
     localStorage.setItem('gridwalkers:theme', value ? 'dark' : 'light');
   }
-  function selectCrossStyle(style: CrossStyle) {
+  async function selectCrossStyle(style: CrossStyle, nextUpload = crossUpload) {
+    const image = nextUpload?.style === style ? nextUpload.image : undefined;
+    if (!isSolo && room && connected && socket.connected) {
+      const result = await socket.timeout(5000).emitWithAck('player:profile', { ...profile, crossStyle: style, crossImage: image });
+      if (!result.ok) throw new Error(result.error);
+    }
+    if (nextUpload && nextUpload !== crossUpload) {
+      setCrossUpload(nextUpload);
+      localStorage.setItem('gridwalkers:cross-upload', JSON.stringify(nextUpload));
+    }
     setCrossStyle(style);
     localStorage.setItem('gridwalkers:cross-style', style);
-    if (!isSolo && room && connected && socket.connected) {
-      socket.timeout(4000).emit('player:profile', { ...profile, crossStyle: style }, feedback);
-    }
   }
   function toggle() {
     if (isSolo) { solo.toggle(); return; }
@@ -426,7 +464,7 @@ function App() {
       {!connected && <div className="connection-note" role="status">{error || 'Reconnecting to the room…'}</div>}
       <div className="game-grid">
         <section className="board-frame"><BoardCanvas room={room} id={id} controls={controls} reduced={reduced} dark={dark} change={change} cross={cross} move={move} toggle={toggle}
-          enabled={playing && connected && !dialog} onZoom={setZoom} optimistic={optimistic} mistakes={mistakes} crossStyle={crossStyle}/></section>
+          enabled={playing && connected && !dialog} onZoom={setZoom} optimistic={optimistic} mistakes={mistakes} crossStyle={crossStyle} crossImage={crossImage}/></section>
         <aside className="game-sidebar">
           <section className="panel game-panel">
             <div className="lives" data-low={lives <= 1 || undefined} role="status">Lives <strong>{lives} / {puzzleLives}</strong></div>
@@ -472,7 +510,7 @@ function App() {
     </Dialog>}
     {(dialog === 'profile' || dialog === 'join') && <Dialog title={dialog === 'join' ? 'Get ready to join' : 'My character'} close={() => setDialog(undefined)}>
       <Customize profile={profile} joining={dialog === 'join'} save={saveProfile}>
-        <CrossStylePicker value={crossStyle} select={selectCrossStyle}/>
+        <CrossStylePicker value={crossStyle} upload={crossUpload} select={selectCrossStyle}/>
       </Customize>
       {busy && <p role="status">Joining room…</p>}
       {error && <p className="error" role="alert">{error}</p>}
@@ -495,7 +533,7 @@ function App() {
         <label><input type="checkbox" checked={!muted} onChange={e => { setMuted(!e.target.checked); localStorage.setItem('gridwalkers:mute', String(!e.target.checked)); }}/> Play completion sound</label>
         <label><input type="checkbox" checked={reduced} onChange={e => setReduced(e.target.checked)}/> Reduce motion</label>
       </div>
-      <CrossStylePicker value={crossStyle} select={selectCrossStyle}/>
+      <CrossStylePicker value={crossStyle} upload={crossUpload} select={selectCrossStyle}/>
       <div className="settings-actions"><button onClick={() => setDialog('profile')}>Edit character</button>{isSolo && <button onClick={leave}>Back to Home</button>}</div>
       {error && <p className="error" role="alert">{error}</p>}
     </Dialog>}
@@ -505,12 +543,14 @@ function App() {
       {result.phase === 'failed' && <p>The puzzle ended after three mistakes.</p>}
       <div className="victory-picture" style={{ gridTemplateColumns: 'repeat(' + result.settings.width + ', 1fr)', aspectRatio: result.settings.width + ' / ' + result.settings.height }} aria-label="Final puzzle board" role="img">
         {result.cells.map((cell, i) => {
-          const style = crossStyles[result.crossStyles?.[i] ?? crossStyle];
-          if (cell !== 2 || style === crossStyles.standard) {
+          const style = result.crossStyles?.[i] ?? crossStyle;
+          const uploaded = isUploadedCrossStyle(style) ? result.crossImages?.[style] ?? (style === crossStyle ? crossImage : undefined) : undefined;
+          const source = cell === 2 ? crossImageSource(style, uploaded) : undefined;
+          if (cell !== 2 || (!source && style !== 'poop')) {
             return <i className={cell === 1 ? 'filled' : cell === 2 ? 'crossed' : ''} key={i}/>;
           }
           return <i className="custom-cross" key={i}>
-            {'image' in style ? <img src={style.image} alt="" /> : <span style={{ fontSize: 65 / result.settings.width + 'cqw' }}>{style.symbol}</span>}
+            {source ? <img src={source} alt="" /> : <span style={{ fontSize: 65 / result.settings.width + 'cqw' }}>{crossStyles.poop.symbol}</span>}
           </i>;
         })}
       </div>

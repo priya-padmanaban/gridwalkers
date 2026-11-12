@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
 import type { MutableRefObject, RefObject } from 'react';
-import { boardMargin, constrainPosition, directions, insideBoard, movementInterval } from '../shared/protocol.ts';
+import { boardMargin, constrainPosition, directions, insideBoard, isUploadedCrossStyle, movementInterval } from '../shared/protocol.ts';
 import type { CrossStyle, Direction, Line, Mark, Point, Snapshot } from '../shared/protocol.ts';
 import { sprite } from './sprite.tsx';
-import { crossStyles } from './crossStyles.ts';
+import { crossImageSource, crossStyles } from './crossStyles.ts';
+import { loadCrossMedia } from './crossMedia.ts';
 
 export type CameraAction = 'fit' | 'center' | 'in' | 'out';
 export type BoardControls = { camera(action: CameraAction): void; focus(): void };
@@ -15,6 +16,7 @@ type Props = {
   enabled: boolean; dark: boolean; onZoom(zoom: number): void; optimistic: MutableRefObject<Map<number, Mark>>;
   mistakes: RefObject<MistakeFlashes | undefined>;
   crossStyle: CrossStyle;
+  crossImage?: string;
 };
 const keys: Record<string, Direction> = { w: 'up', a: 'left', s: 'down', d: 'right', arrowup: 'up', arrowleft: 'left', arrowdown: 'down', arrowright: 'right' };
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -30,12 +32,7 @@ export function BoardCanvas(props: Props) {
   useEffect(() => {
     const element = canvas.current!;
     const ctx = element.getContext('2d')!;
-    const crossImages = new Map<CrossStyle, HTMLImageElement>();
-    for (const style of ['trollface', 'frog'] as const) {
-      const image = new Image();
-      image.src = crossStyles[style].image;
-      crossImages.set(style, image);
-    }
+    const crossMedia = new Map<string, ReturnType<typeof loadCrossMedia>>();
     const camera = { tile: 30, x: 0, y: 0, follow: true };
     let width = 0;
     let height = 0;
@@ -183,7 +180,7 @@ export function BoardCanvas(props: Props) {
     }
     function render(now: number) {
       frame = requestAnimationFrame(render);
-      const { room, reduced, dark, id, optimistic, mistakes, crossStyle } = latest.current;
+      const { room, reduced, dark, id, optimistic, mistakes, crossStyle, crossImage } = latest.current;
       if (!room.board) return;
       const board = room.board;
       const { width: w, height: h } = room.settings;
@@ -205,6 +202,7 @@ export function BoardCanvas(props: Props) {
         pressed.clear();
         previousFrame = now;
         flashes.clear();
+        crossMedia.clear();
         previousCells = undefined;
         camera.tile = Math.max(w, h) > 22 ? 28 : 34;
         camera.follow = true;
@@ -240,12 +238,27 @@ export function BoardCanvas(props: Props) {
       ctx.rect(left, top, width - left, height - top);
       ctx.clip();
       const me = room.players.find(player => player.id === id);
+      const crossFrames = new Map<CrossStyle, ReturnType<ReturnType<typeof loadCrossMedia>>>();
+      function frameFor(style: CrossStyle) {
+        if (!crossFrames.has(style)) {
+          const uploaded = isUploadedCrossStyle(style) ? board.crossImages?.[style] ?? (style === crossStyle ? crossImage : undefined) : undefined;
+          const source = crossImageSource(style, uploaded);
+          if (!source) return;
+          let media = crossMedia.get(source);
+          if (!media) {
+            media = loadCrossMedia(source);
+            crossMedia.set(source, media);
+          }
+          crossFrames.set(style, media(now, reduced));
+        }
+        return crossFrames.get(style);
+      }
       for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
         const i = y * w + x;
         const actual = board.cells[i] === 1 ? 1 : optimistic.current.get(i) ?? board.cells[i];
         const mark = actual === 0 && stroke && stroke.cells.size > 1 && stroke.cells.has(i) ? 2 : actual;
         const cellCrossStyle = board.crossStyles?.[i] ?? crossStyle;
-        const crossImage = crossImages.get(cellCrossStyle);
+        const crossFrame = mark === 2 ? frameFor(cellCrossStyle) : undefined;
         const px = ox + x * t;
         const py = oy + y * t;
         const focused = x === me?.position.x || y === me?.position.y;
@@ -255,11 +268,11 @@ export function BoardCanvas(props: Props) {
           ctx.fillStyle = '#ffffff1f';
           ctx.fillRect(px + 2, py + 2, t - 4, 2);
         }
-        if (mark === 2 && crossImage?.naturalWidth) {
-          const scale = t * 0.8 / Math.max(crossImage.naturalWidth, crossImage.naturalHeight);
-          const imageWidth = crossImage.naturalWidth * scale;
-          const imageHeight = crossImage.naturalHeight * scale;
-          ctx.drawImage(crossImage, px + (t - imageWidth) / 2, py + (t - imageHeight) / 2, imageWidth, imageHeight);
+        if (crossFrame) {
+          const scale = t * 0.8 / Math.max(crossFrame.width, crossFrame.height);
+          const imageWidth = crossFrame.width * scale;
+          const imageHeight = crossFrame.height * scale;
+          ctx.drawImage(crossFrame.image, px + (t - imageWidth) / 2, py + (t - imageHeight) / 2, imageWidth, imageHeight);
         } else if (mark === 2 && cellCrossStyle === 'poop') {
           ctx.font = t * 0.68 + 'px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
           ctx.textAlign = 'center';

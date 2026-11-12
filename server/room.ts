@@ -1,7 +1,7 @@
 import { createHash, randomInt, randomUUID } from 'node:crypto';
-import { accessories, crossStyleIds, difficulties, hairColors, shirts, skins, styles } from '../shared/protocol.ts';
+import { accessories, crossStyleIds, crossUploadMaxBytes, crossUploadMaxDimension, difficulties, hairColors, isUploadedCrossStyle, shirts, skins, styles } from '../shared/protocol.ts';
 import type { Mark, Patch, Point, Profile, PuzzleResult, Settings, Snapshot, Update } from '../shared/protocol.ts';
-import { attemptCrosses, attemptMark, recordCrossStyles } from '../shared/board.ts';
+import { attemptCrosses, attemptMark, recordCrossImage, recordCrossStyles } from '../shared/board.ts';
 import type { Room, Session } from './store.ts';
 
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -41,14 +41,41 @@ export function profileOf(value: Profile): Profile {
   }
   const name = Array.from(new Intl.Segmenter().segment(value.name.replace(/[\p{Cc}\p{Bidi_Control}]/gu, '').trim()))
     .slice(0, 16).map(({ segment }) => segment).join('') || 'Walker';
-  const crossStyle = value.crossStyle && crossStyleIds.includes(value.crossStyle) ? value.crossStyle : undefined;
-  return { name, skin: value.skin, hair: value.hair, shirt: value.shirt, style: value.style, accessory: value.accessory, crossStyle };
+  const profile = { name, skin: value.skin, hair: value.hair, shirt: value.shirt, style: value.style, accessory: value.accessory };
+  const crossStyle = crossStyleIds.find(style => style === value.crossStyle);
+  if (crossStyle) return { ...profile, crossStyle };
+  if (!isUploadedCrossStyle(value.crossStyle)) return profile;
+  const image = value.crossImage;
+  if (typeof image !== 'string' || image.length > Math.ceil(crossUploadMaxBytes / 3) * 4 + 22) {
+    throw new Error('Upload a cross image up to 256 KB.');
+  }
+  const match = /^data:image\/(png|gif);base64,([A-Za-z0-9+/]+={0,2})$/.exec(image);
+  const bytes = Buffer.from(match?.[2] ?? '', 'base64');
+  const png = match?.[1] === 'png' && bytes.length >= 24 && bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')) && bytes.toString('ascii', 12, 16) === 'IHDR';
+  const gif = match?.[1] === 'gif' && bytes.length >= 13 && /^GIF8[79]a$/.test(bytes.toString('ascii', 0, 6));
+  const width = png ? bytes.readUInt32BE(16) : gif ? bytes.readUInt16LE(6) : 0;
+  const height = png ? bytes.readUInt32BE(20) : gif ? bytes.readUInt16LE(8) : 0;
+  if (!width || !height || width > crossUploadMaxDimension || height > crossUploadMaxDimension ||
+      bytes.length > crossUploadMaxBytes || bytes.toString('base64') !== match?.[2] || `upload:${digest(image)}` !== value.crossStyle) {
+    throw new Error('Upload a valid image up to 256 KB and 512 × 512 pixels.');
+  }
+  return { ...profile, crossStyle: value.crossStyle, crossImage: image };
 }
 
+export function checkCrossImageCapacity(room: Room, profile: Profile, replacing?: Session) {
+  if (!isUploadedCrossStyle(profile.crossStyle)) return;
+  const images = new Set(Object.keys(room.game?.view.crossImages ?? {}));
+  for (const session of room.sessions) {
+    const style = session.player.profile.crossStyle;
+    if (session !== replacing && isUploadedCrossStyle(style)) images.add(style);
+  }
+  images.add(profile.crossStyle);
+  if (images.size > 16) throw new Error('This puzzle has reached its limit of 16 custom cross images.');
+}
 export function finishedPuzzle(room: Room): PuzzleResult | undefined {
   if (!room.game || (room.phase !== 'completed' && room.phase !== 'failed')) return room.lastResult;
   return {
-    phase: room.phase, settings: room.settings, cells: room.game.view.cells, crossStyles: room.game.view.crossStyles,
+    phase: room.phase, settings: room.settings, cells: room.game.view.cells, crossStyles: room.game.view.crossStyles, crossImages: room.game.view.crossImages,
     startedAt: room.startedAt, finishedAt: room.finishedAt, participants: room.participants.length,
   };
 }
@@ -111,6 +138,7 @@ export function spawn(room: Room) {
 }
 export function addSession(room: Room, socket: string, tokenHash: string, profile: Profile, now: number) {
   let existing = room.sessions.find(session => session.tokenHash === tokenHash);
+  checkCrossImageCapacity(room, profile, existing);
   if (!existing) {
     if (room.sessions.length >= 4) {
       const vacancy = room.sessions.findIndex(session => !session.player.connected && session.player.id !== room.host && now - session.until >= grace);
@@ -125,7 +153,7 @@ export function addSession(room: Room, socket: string, tokenHash: string, profil
     room.sessions.push(existing);
   }
   existing.socket = socket;
-  if (profile.crossStyle) existing.player.profile = { ...existing.player.profile, crossStyle: profile.crossStyle };
+  if (profile.crossStyle) existing.player.profile = { ...existing.player.profile, crossStyle: profile.crossStyle, crossImage: profile.crossImage };
   existing.player.connected = true;
   existing.until = now + lease;
   if (room.phase === 'playing' && !room.participants.includes(existing.player.id)) room.participants.push(existing.player.id);
@@ -160,6 +188,9 @@ function applyChanges(room: Room, session: Session, changes: ReturnType<typeof a
     room.phase = changes.phase;
     room.finishedAt = now;
   }
-  const crossStyles = recordCrossStyles(room.game!.view, changes.cells, session.player.profile.crossStyle ?? 'standard');
-  return { ...changes, crossStyles, boardId: room.game!.id, revision: ++room.revision, actor: session.player.id, actionId, finishedAt: room.finishedAt };
+  const game = room.game!;
+  const { crossStyle = 'standard', crossImage } = session.player.profile;
+  const crossStyles = recordCrossStyles(game.view, changes.cells, crossStyle);
+  const crossImages = crossStyles && recordCrossImage(game.view, crossStyle, crossImage);
+  return { ...changes, crossStyles, crossImages, boardId: game.id, revision: ++room.revision, actor: session.player.id, actionId, finishedAt: room.finishedAt };
 }

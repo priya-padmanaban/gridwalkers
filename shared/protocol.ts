@@ -26,17 +26,25 @@ export const hairColors = ['#523732', '#272c35', '#d59650', '#923f42'];
 export const shirts = ['#6e9468', '#bb715a', '#688eae', '#9c77ae'];
 export const styles = ['Crop', 'Sweep', 'Puffs'];
 export const accessories = ['None', 'Cap', 'Bow'];
-export const crossStyleIds = ['standard', 'trollface', 'frog', 'poop'] as const;
-export type CrossStyle = typeof crossStyleIds[number];
-export type Profile = { name: string; skin: number; hair: number; style: number; shirt: number; accessory: number; crossStyle?: CrossStyle };
+export const crossStyleIds = ['standard', 'trollface', 'frog', 'poop', 'the-rock'] as const;
+export type BuiltInCrossStyle = typeof crossStyleIds[number];
+export type UploadedCrossStyle = `upload:${string}`;
+export type CrossStyle = BuiltInCrossStyle | UploadedCrossStyle;
+export type CrossImages = Partial<Record<UploadedCrossStyle, string>>;
+export const crossUploadMaxBytes = 256 * 1024;
+export const crossUploadMaxDimension = 512;
+export function isUploadedCrossStyle(style: unknown): style is UploadedCrossStyle {
+  return typeof style === 'string' && /^upload:[a-f0-9]{64}$/.test(style);
+}
+export type Profile = { name: string; skin: number; hair: number; style: number; shirt: number; accessory: number; crossStyle?: CrossStyle; crossImage?: string };
 export const defaultProfile: Profile = { name: 'Walker', skin: 0, hair: 0, style: 1, shirt: 0, accessory: 0 };
 export const defaultSettings = { width: 15, height: 15, difficulty: 'medium', name: '', penalizeIncorrectCrosses: true } as const;
 export type Settings = { width: number; height: number; difficulty: Difficulty; name: string; penalizeIncorrectCrosses?: boolean };
 export type Player = { id: string; profile: Profile; color: string; connected: boolean; ready: boolean; position: Point; direction: Direction; mode: Mode; gridOnly?: boolean };
 export type Line = { complete: boolean; grey: boolean[] };
-export type Board = { id: string; rows: number[][]; columns: number[][]; cells: Mark[]; rowState: Line[]; columnState: Line[]; crossStyles?: Partial<Record<number, CrossStyle>> };
+export type Board = { id: string; rows: number[][]; columns: number[][]; cells: Mark[]; rowState: Line[]; columnState: Line[]; crossStyles?: Partial<Record<number, CrossStyle>>; crossImages?: CrossImages };
 export type EndPhase = 'completed' | 'failed';
-export type PuzzleResult = { phase: EndPhase; settings: Settings; cells: Mark[]; startedAt?: number; finishedAt?: number; participants: number; crossStyles?: Board['crossStyles'] };
+export type PuzzleResult = { phase: EndPhase; settings: Settings; cells: Mark[]; startedAt?: number; finishedAt?: number; participants: number; crossStyles?: Board['crossStyles']; crossImages?: CrossImages };
 export type Phase = 'lobby' | 'generating' | 'playing' | EndPhase;
 export type Snapshot = {
   version: number;
@@ -50,6 +58,7 @@ export type Patch = {
   actor: string; actionId?: string; finishedAt?: number; phase?: EndPhase; lives?: number;
   mistakes?: number[];
   crossStyles?: Board['crossStyles'];
+  crossImages?: CrossImages;
 };
 export type Motion = Pick<Player, 'id' | 'position' | 'direction' | 'mode' | 'gridOnly'> & { boardId: string };
 export type Update =

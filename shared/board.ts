@@ -1,4 +1,4 @@
-import { puzzleLives } from './protocol.ts';
+import { isUploadedCrossStyle, puzzleLives } from './protocol.ts';
 import type { Board, CrossStyle, EndPhase, Line, Mark, Patch, Point } from './protocol.ts';
 import { analyze } from './puzzle.ts';
 import type { Puzzle } from './puzzle.ts';
@@ -91,6 +91,13 @@ export function recordCrossStyles(board: Board, cells: Patch['cells'], style: Cr
   for (const [index, mark] of cells) if (mark !== 2) delete styles[index];
   board.crossStyles = styles;
   return added;
+}
+
+export function recordCrossImage(board: Board, style: CrossStyle, image?: string): Patch['crossImages'] {
+  if (!image || !isUploadedCrossStyle(style) || board.crossImages?.[style]) return;
+  const images = { [style]: image };
+  board.crossImages = { ...board.crossImages, ...images };
+  return images;
 }
 
 export function markCell(game: Game, x: number, y: number, mark: Mark): Pick<Patch, 'cells' | 'rows' | 'columns'> | undefined {

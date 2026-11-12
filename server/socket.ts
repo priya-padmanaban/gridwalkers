@@ -1,11 +1,11 @@
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { Server } from 'socket.io';
-import { boardMargin, constrainPosition, crossBatchLimit, directions, insideBoard } from '../shared/protocol.ts';
+import { boardMargin, constrainPosition, crossBatchLimit, crossUploadMaxBytes, directions, insideBoard } from '../shared/protocol.ts';
 import type { Ack, Identity, Motion, Snapshot, ToClient, ToServer, Update } from '../shared/protocol.ts';
 import { newGame } from '../shared/board.ts';
 import { generateAsync } from './generation.ts';
-import { addSession, apply, applyCrosses, codeOf, digest, finishedPuzzle, full, lease, profileOf, reconcile, returnToLobby, roomCode, settingsOf, snapshot, start, tokenOf } from './room.ts';
+import { addSession, apply, applyCrosses, checkCrossImageCapacity, codeOf, digest, finishedPuzzle, full, lease, profileOf, reconcile, returnToLobby, roomCode, settingsOf, snapshot, start, tokenOf } from './room.ts';
 import { RoomStore } from './store.ts';
 import type { Room, Session } from './store.ts';
 
@@ -19,7 +19,7 @@ export function createGameServer() {
   });
   const origin = process.env.PUBLIC_APP_URL ? new URL(process.env.PUBLIC_APP_URL).origin : undefined;
   const io = new Server<ToServer, ToClient>(server, {
-    path: '/api/ws', addTrailingSlash: false, transports: ['websocket'], maxHttpBufferSize: 8192,
+    path: '/api/ws', addTrailingSlash: false, transports: ['websocket'], maxHttpBufferSize: Math.ceil(crossUploadMaxBytes / 3) * 4 + 8192,
     allowRequest: (req, done) => {
       const requestOrigin = req.headers.origin;
       const forwardedHost = req.headers['x-forwarded-host'] ?? req.headers.host;
@@ -144,7 +144,12 @@ export function createGameServer() {
     }));
     socket.on('player:profile', (data, ack) => void answer(ack, async () => {
       const profile = profileOf(data);
-      await queueMovement((room, session) => { session.player.profile = profile; return full(room); });
+      if (!allowBoardInput()) throw new Error('Too many player updates.');
+      await queueMovement((room, session) => {
+        checkCrossImageCapacity(room, profile, session);
+        session.player.profile = profile;
+        return full(room);
+      });
     }));
     socket.on('room:settings', (data, ack) => void answer(ack, async () => {
       const settings = settingsOf(data);

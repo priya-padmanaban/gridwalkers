@@ -15,6 +15,7 @@ function patchBoard(room: Snapshot, patch: Patch): Snapshot {
     board.crossStyles = { ...board.crossStyles, ...patch.crossStyles };
     for (const [index, mark] of patch.cells) if (mark !== 2) delete board.crossStyles[index];
   }
+  if (patch.crossImages) board.crossImages = { ...board.crossImages, ...patch.crossImages };
   return { ...room, board, revision: patch.revision, finishedAt: patch.finishedAt,
     lives: patch.lives ?? room.lives, phase: patch.phase ?? (patch.finishedAt ? 'completed' : room.phase) };
 }

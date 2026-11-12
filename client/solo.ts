@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { attemptCrosses, attemptMark, newGame, recordCrossStyles } from '../shared/board.ts';
+import { attemptCrosses, attemptMark, newGame, recordCrossImage, recordCrossStyles } from '../shared/board.ts';
 import type { Game } from '../shared/board.ts';
 import { boardMargin, constrainPosition, directions, insideBoard } from '../shared/protocol.ts';
 import type { CrossStyle, Direction, Mark, Player, Point, Profile, Settings, Snapshot } from '../shared/protocol.ts';
@@ -7,7 +7,7 @@ import type { SoloGeneration } from './solo-worker.ts';
 
 export const soloPlayerId = 'solo';
 
-export function useSolo(flashMistakes: (boardId: string, cells: number[]) => void, crossStyle: CrossStyle) {
+export function useSolo(flashMistakes: (boardId: string, cells: number[]) => void, crossStyle: CrossStyle, crossImage?: string) {
   const [room, setRoom] = useState<Snapshot>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -77,7 +77,7 @@ export function useSolo(flashMistakes: (boardId: string, cells: number[]) => voi
       : undefined;
     if (!patch && !player) return;
     if (patch?.mistakes?.length) flashMistakes(game.id, patch.mistakes);
-    if (patch) recordCrossStyles(game.view, patch.cells, crossStyle);
+    if (patch && recordCrossStyles(game.view, patch.cells, crossStyle)) recordCrossImage(game.view, crossStyle, crossImage);
     const board = patch ? {
       ...game.view, cells: [...game.view.cells], rowState: [...game.view.rowState], columnState: [...game.view.columnState],
     } : room.board;
