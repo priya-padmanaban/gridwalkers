@@ -70,7 +70,9 @@ export function createGameServer() {
       return result.room;
     }
     function queueMovement(change: Parameters<typeof mutate>[0]) {
-      moves = moves.then(async () => { await mutate(change); }).catch(() => {});
+      const next = moves.then(async () => { await mutate(change); });
+      moves = next.catch(() => {});
+      return next;
     }
     async function enter(work: () => Promise<{ room: Room; session: Session }>): Promise<Identity> {
       if (joining || binding) throw new Error('Leave your current room first.');
@@ -142,7 +144,7 @@ export function createGameServer() {
     }));
     socket.on('player:profile', (data, ack) => void answer(ack, async () => {
       const profile = profileOf(data);
-      await mutate((room, session) => { session.player.profile = profile; return full(room); });
+      await queueMovement((room, session) => { session.player.profile = profile; return full(room); });
     }));
     socket.on('room:settings', (data, ack) => void answer(ack, async () => {
       const settings = settingsOf(data);

@@ -1,5 +1,5 @@
 import { puzzleLives } from './protocol.ts';
-import type { Board, EndPhase, Line, Mark, Patch, Point } from './protocol.ts';
+import type { Board, CrossStyle, EndPhase, Line, Mark, Patch, Point } from './protocol.ts';
 import { analyze } from './puzzle.ts';
 import type { Puzzle } from './puzzle.ts';
 
@@ -47,6 +47,7 @@ export function attemptMark(game: Game, x: number, y: number, mark: Mark, penali
   const index = y * game.view.columns.length + x;
   if (lives <= 0 || game.marks[index] === 1) return;
   const filled = game.puzzle.solution[index] === 1;
+  if (mark === 1 && !filled && game.view.cells[index] === 2) return;
   if ((mark === 1 && !filled) || (mark === 2 && filled && penalizeIncorrectCrosses)) {
     game.lives = lives - 1;
     return { cells: [], rows: [], columns: [], mistakes: [index], lives: game.lives, phase: game.lives === 0 ? 'failed' : undefined };
@@ -78,6 +79,18 @@ export function attemptCrosses(game: Game, points: Point[], penalizeIncorrectCro
     if (change.phase) break;
   }
   if (last) return { ...last, cells: [...cells], rows: [...rows], columns: [...columns], mistakes };
+}
+
+export function recordCrossStyles(board: Board, cells: Patch['cells'], style: CrossStyle): Patch['crossStyles'] {
+  let added: Patch['crossStyles'];
+  for (const [index, mark] of cells) {
+    if (mark === 2) (added ??= {})[index] = style;
+  }
+  if (!added && !cells.some(([index, mark]) => mark !== 2 && board.crossStyles?.[index])) return;
+  const styles = { ...board.crossStyles, ...added };
+  for (const [index, mark] of cells) if (mark !== 2) delete styles[index];
+  board.crossStyles = styles;
+  return added;
 }
 
 export function markCell(game: Game, x: number, y: number, mark: Mark): Pick<Patch, 'cells' | 'rows' | 'columns'> | undefined {

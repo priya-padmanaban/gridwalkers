@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { attemptCrosses, attemptMark, markCell, newGame } from '../shared/board.ts';
 import { describe as puzzleOf } from '../shared/puzzle.ts';
-import { apply, addSession, grace, lease, reconcile, snapshot } from '../server/room.ts';
+import { apply, applyCrosses, addSession, grace, lease, reconcile, snapshot } from '../server/room.ts';
 import type { Room } from '../server/store.ts';
 import { defaultProfile, defaultSettings } from '../shared/protocol.ts';
 
@@ -14,7 +14,7 @@ describe('board mutations', () => {
   it('rejects wrong fills and crosses, runs out of shared lives, and preserves correct marks', () => {
     const game = fixture();
     expect(attemptMark(game, 2, 0, 2)?.cells).toEqual([[2, 2]]);
-    expect(attemptMark(game, 2, 0, 1)).toMatchObject({ lives: 2, cells: [], mistakes: [2] });
+    expect(attemptMark(game, 3, 0, 1)).toMatchObject({ lives: 2, cells: [], mistakes: [3] });
     expect(game.view.cells[2]).toBe(2);
     expect(attemptMark(game, 0, 0, 2)).toMatchObject({ lives: 1, cells: [] });
     expect(attemptMark(game, 0, 0, 1)).toMatchObject({ lives: 1 });
@@ -26,6 +26,17 @@ describe('board mutations', () => {
     expect(attemptMark(game, 0, 0, 0)).toBeUndefined();
     expect(game.view.cells.slice(0, 5)).toEqual([1, 1, 2, 2, 2]);
     expect(fixture().lives).toBe(3);
+  });
+  it('skips manually and automatically crossed empty cells in Fill mode', () => {
+    const game = fixture();
+    attemptMark(game, 2, 0, 2);
+    expect(attemptMark(game, 2, 0, 1)).toBeUndefined();
+    attemptMark(game, 0, 0, 1);
+    attemptMark(game, 1, 0, 1);
+    expect(game.view.cells[3]).toBe(2);
+    expect(attemptMark(game, 3, 0, 1)).toBeUndefined();
+    expect(game.lives).toBe(3);
+    expect(game.view.cells.slice(2, 4)).toEqual([2, 2]);
   });
   it('locks confirmed fills and reports each life-losing cell in a drag', () => {
     const game = fixture();
@@ -43,7 +54,7 @@ describe('board mutations', () => {
     expect(attemptCrosses(game, [{ x: 1, y: 0 }, { x: 2, y: 0 }], false)).toMatchObject({
       cells: [[1, 2], [2, 2]], lives: 3,
     });
-    expect(attemptMark(game, 2, 0, 1, false)).toMatchObject({ cells: [], lives: 2 });
+    expect(attemptMark(game, 3, 0, 1, false)).toMatchObject({ cells: [], lives: 2 });
     expect(attemptMark(game, 0, 0, 1, false)?.lives).toBe(2);
     expect(game.view.cells[0]).toBe(1);
   });
@@ -104,6 +115,22 @@ describe('room authority', () => {
   const makeRoom = (): Room => ({
     code: 'AAAAAA', host: '', settings: { ...defaultSettings, width: 5, height: 5 }, sessions: [], game: fixture(),
     version: 0, revision: 0, phase: 'playing', progress: 100, participants: [],
+  });
+  it('shares each manual cross style and uses the completing player’s style for new automatic crosses', () => {
+    const room = makeRoom();
+    const frog = addSession(room, 'socket-a', 'hash-a', { ...defaultProfile, crossStyle: 'frog' }, 1000);
+    const troll = addSession(room, 'socket-b', 'hash-b', { ...defaultProfile, crossStyle: 'trollface' }, 1000);
+    expect(applyCrosses(room, frog, [{ x: 2, y: 0 }, { x: 4, y: 0 }], 1100, 'drag')?.crossStyles).toEqual({ 2: 'frog', 4: 'frog' });
+    apply(room, frog, 0, 0, 1, 1100);
+    const finishRow = apply(room, troll, 1, 0, 1, 1100);
+    expect(finishRow?.crossStyles).toMatchObject({ 3: 'trollface' });
+    expect(finishRow?.crossStyles?.[2]).toBeUndefined();
+    expect(snapshot(room).board?.crossStyles).toMatchObject({ 2: 'frog', 3: 'trollface', 4: 'frog' });
+    troll.player.profile.crossStyle = 'poop';
+    expect(apply(room, troll, 4, 1, 2, 1100)?.crossStyles).toEqual({ 9: 'poop' });
+    expect(snapshot(room).board?.crossStyles?.[3]).toBe('trollface');
+    apply(room, troll, 4, 1, 0, 1100);
+    expect(snapshot(room).board?.crossStyles?.[9]).toBeUndefined();
   });
   it('restores a host within the grace period and transfers once if the lease expires', () => {
     const room = makeRoom();

@@ -11,6 +11,10 @@ function patchBoard(room: Snapshot, patch: Patch): Snapshot {
   for (const [index, mark] of patch.cells) board.cells[index] = mark;
   for (const [index, line] of patch.rows) board.rowState[index] = line;
   for (const [index, line] of patch.columns) board.columnState[index] = line;
+  if (board.crossStyles || patch.crossStyles) {
+    board.crossStyles = { ...board.crossStyles, ...patch.crossStyles };
+    for (const [index, mark] of patch.cells) if (mark !== 2) delete board.crossStyles[index];
+  }
   return { ...room, board, revision: patch.revision, finishedAt: patch.finishedAt,
     lives: patch.lives ?? room.lives, phase: patch.phase ?? (patch.finishedAt ? 'completed' : room.phase) };
 }

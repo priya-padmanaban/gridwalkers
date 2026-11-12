@@ -26,15 +26,17 @@ export const hairColors = ['#523732', '#272c35', '#d59650', '#923f42'];
 export const shirts = ['#6e9468', '#bb715a', '#688eae', '#9c77ae'];
 export const styles = ['Crop', 'Sweep', 'Puffs'];
 export const accessories = ['None', 'Cap', 'Bow'];
-export type Profile = { name: string; skin: number; hair: number; style: number; shirt: number; accessory: number };
+export const crossStyleIds = ['standard', 'trollface', 'frog', 'poop'] as const;
+export type CrossStyle = typeof crossStyleIds[number];
+export type Profile = { name: string; skin: number; hair: number; style: number; shirt: number; accessory: number; crossStyle?: CrossStyle };
 export const defaultProfile: Profile = { name: 'Walker', skin: 0, hair: 0, style: 1, shirt: 0, accessory: 0 };
 export const defaultSettings = { width: 15, height: 15, difficulty: 'medium', name: '', penalizeIncorrectCrosses: true } as const;
 export type Settings = { width: number; height: number; difficulty: Difficulty; name: string; penalizeIncorrectCrosses?: boolean };
 export type Player = { id: string; profile: Profile; color: string; connected: boolean; ready: boolean; position: Point; direction: Direction; mode: Mode; gridOnly?: boolean };
 export type Line = { complete: boolean; grey: boolean[] };
-export type Board = { id: string; rows: number[][]; columns: number[][]; cells: Mark[]; rowState: Line[]; columnState: Line[] };
+export type Board = { id: string; rows: number[][]; columns: number[][]; cells: Mark[]; rowState: Line[]; columnState: Line[]; crossStyles?: Partial<Record<number, CrossStyle>> };
 export type EndPhase = 'completed' | 'failed';
-export type PuzzleResult = { phase: EndPhase; settings: Settings; cells: Mark[]; startedAt?: number; finishedAt?: number; participants: number };
+export type PuzzleResult = { phase: EndPhase; settings: Settings; cells: Mark[]; startedAt?: number; finishedAt?: number; participants: number; crossStyles?: Board['crossStyles'] };
 export type Phase = 'lobby' | 'generating' | 'playing' | EndPhase;
 export type Snapshot = {
   version: number;
@@ -47,6 +49,7 @@ export type Patch = {
   boardId: string; revision: number; cells: [number, Mark][]; rows: [number, Line][]; columns: [number, Line][];
   actor: string; actionId?: string; finishedAt?: number; phase?: EndPhase; lives?: number;
   mistakes?: number[];
+  crossStyles?: Board['crossStyles'];
 };
 export type Motion = Pick<Player, 'id' | 'position' | 'direction' | 'mode' | 'gridOnly'> & { boardId: string };
 export type Update =

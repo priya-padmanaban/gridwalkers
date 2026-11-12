@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
 import type { MutableRefObject, RefObject } from 'react';
 import { boardMargin, constrainPosition, directions, insideBoard, movementInterval } from '../shared/protocol.ts';
-import type { Direction, Line, Mark, Point, Snapshot } from '../shared/protocol.ts';
+import type { CrossStyle, Direction, Line, Mark, Point, Snapshot } from '../shared/protocol.ts';
 import { sprite } from './sprite.tsx';
+import { crossStyles } from './crossStyles.ts';
 
 export type CameraAction = 'fit' | 'center' | 'in' | 'out';
 export type BoardControls = { camera(action: CameraAction): void; focus(): void };
@@ -13,6 +14,7 @@ type Props = {
   change(x: number, y: number, mark: Mark): void; cross(points: Point[]): void; move(direction: Direction): void; toggle(): void;
   enabled: boolean; dark: boolean; onZoom(zoom: number): void; optimistic: MutableRefObject<Map<number, Mark>>;
   mistakes: RefObject<MistakeFlashes | undefined>;
+  crossStyle: CrossStyle;
 };
 const keys: Record<string, Direction> = { w: 'up', a: 'left', s: 'down', d: 'right', arrowup: 'up', arrowleft: 'left', arrowdown: 'down', arrowright: 'right' };
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -28,6 +30,12 @@ export function BoardCanvas(props: Props) {
   useEffect(() => {
     const element = canvas.current!;
     const ctx = element.getContext('2d')!;
+    const crossImages = new Map<CrossStyle, HTMLImageElement>();
+    for (const style of ['trollface', 'frog'] as const) {
+      const image = new Image();
+      image.src = crossStyles[style].image;
+      crossImages.set(style, image);
+    }
     const camera = { tile: 30, x: 0, y: 0, follow: true };
     let width = 0;
     let height = 0;
@@ -175,7 +183,7 @@ export function BoardCanvas(props: Props) {
     }
     function render(now: number) {
       frame = requestAnimationFrame(render);
-      const { room, reduced, dark, id, optimistic, mistakes } = latest.current;
+      const { room, reduced, dark, id, optimistic, mistakes, crossStyle } = latest.current;
       if (!room.board) return;
       const board = room.board;
       const { width: w, height: h } = room.settings;
@@ -236,6 +244,8 @@ export function BoardCanvas(props: Props) {
         const i = y * w + x;
         const actual = board.cells[i] === 1 ? 1 : optimistic.current.get(i) ?? board.cells[i];
         const mark = actual === 0 && stroke && stroke.cells.size > 1 && stroke.cells.has(i) ? 2 : actual;
+        const cellCrossStyle = board.crossStyles?.[i] ?? crossStyle;
+        const crossImage = crossImages.get(cellCrossStyle);
         const px = ox + x * t;
         const py = oy + y * t;
         const focused = x === me?.position.x || y === me?.position.y;
@@ -245,7 +255,18 @@ export function BoardCanvas(props: Props) {
           ctx.fillStyle = '#ffffff1f';
           ctx.fillRect(px + 2, py + 2, t - 4, 2);
         }
-        if (mark === 2) {
+        if (mark === 2 && crossImage?.naturalWidth) {
+          const scale = t * 0.8 / Math.max(crossImage.naturalWidth, crossImage.naturalHeight);
+          const imageWidth = crossImage.naturalWidth * scale;
+          const imageHeight = crossImage.naturalHeight * scale;
+          ctx.drawImage(crossImage, px + (t - imageWidth) / 2, py + (t - imageHeight) / 2, imageWidth, imageHeight);
+        } else if (mark === 2 && cellCrossStyle === 'poop') {
+          ctx.font = t * 0.68 + 'px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = dark ? '#e9efe0' : '#243e32';
+          ctx.fillText(crossStyles.poop.symbol, px + t / 2, py + t / 2, t * 0.9);
+        } else if (mark === 2) {
           ctx.strokeStyle = dark ? '#9aab9f' : '#789080';
           ctx.lineWidth = Math.max(1, t / 19);
           ctx.beginPath();

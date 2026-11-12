@@ -80,13 +80,15 @@ describe.runIf(redisTests)('multiplayer across two Redis-backed servers', () => 
     await expect.poll(async () => (await publicRoom(guest)).players[0].position).toEqual(dest);
     expect((await publicRoom(guest)).revision).toBe(0);
     const destinationFilled = (await servers[0].store.read(code))!.game!.puzzle.solution[dest.y * 5 + dest.x];
+    const destinationCrossed = state.board!.cells[dest.y * 5 + dest.x] === 2;
+    const livesAfterToggle = destinationFilled || destinationCrossed ? 3 : 2;
     host.emit('player:mode', { mode: 'fill', boardId });
-    await expect.poll(async () => (await publicRoom(guest)).revision).toBe(1);
-    expect((await publicRoom(guest)).lives).toBe(destinationFilled ? 3 : 2);
-    expect((await publicRoom(host)).revision).toBe(1);
+    await expect.poll(async () => (await publicRoom(guest)).players[0].mode).toBe('fill');
+    expect((await publicRoom(guest)).lives).toBe(livesAfterToggle);
+    expect((await publicRoom(host)).revision).toBe(destinationCrossed ? 0 : 1);
     const activeGame = (await servers[0].store.read(code))!.game!;
     const target = activeGame.puzzle.solution.indexOf(1);
-    let revision = 1;
+    let revision = destinationCrossed ? 0 : 1;
     if (activeGame.marks[target] !== 1) {
       const fill = await host.timeout(4000).emitWithAck('cell:set', { x: target % 5, y: Math.floor(target / 5), boardId, revision, mark: 1, actionId: 'prepare-conflict' });
       expect(fill.ok).toBe(true);
@@ -108,7 +110,7 @@ describe.runIf(redisTests)('multiplayer across two Redis-backed servers', () => 
     const patches = updates.flatMap(notice => notice.update.type === 'patch' ? [notice.update.patch] : []);
     expect(patches).toMatchObject([{ revision: revision + 1, mistakes: [unfilled] }]);
     expect((await publicRoom(host)).board!.cells[target]).toBe(1);
-    expect((await publicRoom(host)).lives).toBe(destinationFilled ? 2 : 1);
+    expect((await publicRoom(host)).lives).toBe(livesAfterToggle - 1);
     expect((await publicRoom(guest)).board).toEqual((await publicRoom(host)).board);
     const guestIdentity = (joins[0] as { ok: true; value: Identity }).value;
     guest.disconnect();
@@ -119,7 +121,7 @@ describe.runIf(redisTests)('multiplayer across two Redis-backed servers', () => 
     const restoredHost = await reconnectedHost.timeout(4000).emitWithAck('room:join', { token: hostToken, code, profile: defaultProfile });
     expect(restoredGuest.ok && restoredGuest.value.id).toBe(guestIdentity.id);
     expect(restoredGuest.ok && restoredGuest.value.room.revision).toBe(revision + 1);
-    expect(restoredGuest.ok && restoredGuest.value.room.lives).toBe(destinationFilled ? 2 : 1);
+    expect(restoredGuest.ok && restoredGuest.value.room.lives).toBe(livesAfterToggle - 1);
     expect(restoredHost.ok && restoredHost.value.room.host).toBe(original.id);
     const authoritative = (await servers[0].store.read(code))!;
     for (const [i, value] of authoritative.game!.puzzle.solution.entries()) {

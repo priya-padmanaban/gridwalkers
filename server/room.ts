@@ -1,7 +1,7 @@
 import { createHash, randomInt, randomUUID } from 'node:crypto';
-import { accessories, difficulties, hairColors, shirts, skins, styles } from '../shared/protocol.ts';
+import { accessories, crossStyleIds, difficulties, hairColors, shirts, skins, styles } from '../shared/protocol.ts';
 import type { Mark, Patch, Point, Profile, PuzzleResult, Settings, Snapshot, Update } from '../shared/protocol.ts';
-import { attemptCrosses, attemptMark } from '../shared/board.ts';
+import { attemptCrosses, attemptMark, recordCrossStyles } from '../shared/board.ts';
 import type { Room, Session } from './store.ts';
 
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -41,13 +41,14 @@ export function profileOf(value: Profile): Profile {
   }
   const name = Array.from(new Intl.Segmenter().segment(value.name.replace(/[\p{Cc}\p{Bidi_Control}]/gu, '').trim()))
     .slice(0, 16).map(({ segment }) => segment).join('') || 'Walker';
-  return { name, skin: value.skin, hair: value.hair, shirt: value.shirt, style: value.style, accessory: value.accessory };
+  const crossStyle = value.crossStyle && crossStyleIds.includes(value.crossStyle) ? value.crossStyle : undefined;
+  return { name, skin: value.skin, hair: value.hair, shirt: value.shirt, style: value.style, accessory: value.accessory, crossStyle };
 }
 
 export function finishedPuzzle(room: Room): PuzzleResult | undefined {
   if (!room.game || (room.phase !== 'completed' && room.phase !== 'failed')) return room.lastResult;
   return {
-    phase: room.phase, settings: room.settings, cells: room.game.view.cells,
+    phase: room.phase, settings: room.settings, cells: room.game.view.cells, crossStyles: room.game.view.crossStyles,
     startedAt: room.startedAt, finishedAt: room.finishedAt, participants: room.participants.length,
   };
 }
@@ -124,6 +125,7 @@ export function addSession(room: Room, socket: string, tokenHash: string, profil
     room.sessions.push(existing);
   }
   existing.socket = socket;
+  if (profile.crossStyle) existing.player.profile = { ...existing.player.profile, crossStyle: profile.crossStyle };
   existing.player.connected = true;
   existing.until = now + lease;
   if (room.phase === 'playing' && !room.participants.includes(existing.player.id)) room.participants.push(existing.player.id);
@@ -158,5 +160,6 @@ function applyChanges(room: Room, session: Session, changes: ReturnType<typeof a
     room.phase = changes.phase;
     room.finishedAt = now;
   }
-  return { ...changes, boardId: room.game!.id, revision: ++room.revision, actor: session.player.id, actionId, finishedAt: room.finishedAt };
+  const crossStyles = recordCrossStyles(room.game!.view, changes.cells, session.player.profile.crossStyle ?? 'standard');
+  return { ...changes, crossStyles, boardId: room.game!.id, revision: ++room.revision, actor: session.player.id, actionId, finishedAt: room.finishedAt };
 }
