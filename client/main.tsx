@@ -1,9 +1,11 @@
 import { createRoot } from 'react-dom/client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
+import type { Dispatch, FormEvent, ReactNode, SetStateAction } from 'react';
 import { clues } from '../shared/clues.ts';
 import { accessories, crossBatchLimit, crossStyleIds, defaultProfile, defaultSettings, difficulties, hairColors, insideBoard, isUploadedCrossStyle, puzzleLives, shirts, skins, styles } from '../shared/protocol.ts';
-import type { CrossStyle, Direction, Line, Mark, Point, Profile, PuzzleResult, Result, Settings, Snapshot } from '../shared/protocol.ts';
+import type { CrossStyle, Direction, Line, Mark, Point, Profile, PuzzleResult, Result, Settings, SettingsInput, Snapshot } from '../shared/protocol.ts';
+import { getPicture, picturePack, validImageCells } from '../shared/pictures.ts';
+import { PictureInput } from './PictureInput.tsx';
 import { Avatar } from './sprite.tsx';
 import { BoardCanvas, mistakeFlashDuration } from './Board.tsx';
 import type { BoardControls, MistakeFlashes } from './Board.tsx';
@@ -45,16 +47,44 @@ function Dialog({ title, close, children }: { title: string; close(): void; chil
     </div>
   </dialog>;
 }
-function SettingsFields({ settings, set, solo = false }: { settings: Settings; set(value: Settings): void; solo?: boolean }) {
+function withPicture(settings: SettingsInput, picture?: string): SettingsInput {
+  const entry = getPicture(picture);
+  return {
+    ...settings, picture, imageCells: undefined,
+    width: entry?.width ?? settings.width, height: entry?.height ?? settings.height,
+    difficulty: entry?.difficulty ?? settings.difficulty,
+  };
+}
+
+function puzzleLabel(settings: Settings) {
+  return settings.picture === 'upload' ? 'Uploaded image' : settings.picture ? 'Picture ' + settings.picture : cap(settings.difficulty);
+}
+
+function canStartPicture(settings: SettingsInput, saved?: Settings) {
+  return settings.picture !== 'upload' ||
+    (settings.imageCells === undefined && saved?.picture === 'upload' && saved.width === settings.width && saved.height === settings.height) ||
+    validImageCells(settings.width, settings.height, settings.imageCells);
+}
+
+function SettingsFields({ settings, set, solo = false, saved }: { settings: SettingsInput; set: Dispatch<SetStateAction<SettingsInput>>; solo?: boolean; saved?: Settings }) {
   return <div className="settings-fields">
     {!solo && <label>Room name <span className="muted">(optional)</span><input maxLength={32} placeholder="e.g. Fern Grove" value={settings.name} onChange={e => set({ ...settings, name: e.target.value })}/></label>}
-    <div className="field-row">
+    <label>Puzzle source<select value={settings.picture ?? ''} onChange={e => set(withPicture(settings, e.target.value || undefined))}>
+      <option value="">Random board</option>
+      <optgroup label="Picture pack">
+        {picturePack.map(({ id, width, height }) => <option key={id} value={id}>Picture {id} · {width} × {height}</option>)}
+      </optgroup>
+      <option value="upload">Upload an image</option>
+    </select></label>
+    {!settings.picture && <div className="field-row">
       <label>Width<input type="number" min={5} max={60} required value={settings.width || ''} onChange={e => set({ ...settings, width: Number(e.target.value) })}/></label>
       <label>Height<input type="number" min={5} max={60} required value={settings.height || ''} onChange={e => set({ ...settings, height: Number(e.target.value) })}/></label>
       <label>Difficulty<select value={settings.difficulty} onChange={e => set({ ...settings, difficulty: e.target.value as Settings['difficulty'] })}>
         {difficulties.map(d => <option key={d} value={d}>{cap(d)}</option>)}
       </select></label>
-    </div>
+    </div>}
+    {settings.picture === 'upload' && <PictureInput saved={saved?.picture === 'upload' || !!settings.imageCells} setImage={(width, height, imageCells) =>
+      set(current => ({ ...current, width, height, imageCells }))}/>}
     {!solo && <div className="toggles"><label><input type="checkbox" checked={settings.penalizeIncorrectCrosses ?? true}
       onChange={e => set({ ...settings, penalizeIncorrectCrosses: e.target.checked })}/> Incorrect crosses cost a life</label></div>}
   </div>;
@@ -200,7 +230,7 @@ function App() {
   const [profile, setProfile] = useState(readProfile);
   const [invite, setInvite] = useState(roomRoute);
   const [dialog, setDialog] = useState<'solo' | 'create' | 'profile' | 'join' | 'settings' | 'leave' | 'result'>();
-  const [settings, setSettings] = useState<Settings>({ ...defaultSettings });
+  const [settings, setSettings] = useState<SettingsInput>({ ...defaultSettings });
   const [zoom, setZoom] = useState(100);
   const [copied, setCopied] = useState('');
   const [muted, setMuted] = useState(() => localStorage.getItem('gridwalkers:mute') !== 'false');
@@ -390,10 +420,11 @@ function App() {
       socket.emit('player:mode', { boardId, mode: current?.mode === 'fill' ? 'walk' : 'fill' });
     }
   }
-  function openSolo() {
+  function openSolo(picture?: string) {
     connection.leave();
     if (location.pathname !== '/') history.replaceState(null, '', '/');
     setInvite('');
+    setSettings(current => withPicture(current, picture));
     setDialog('solo');
   }
 
@@ -403,7 +434,7 @@ function App() {
     <header className="header"><div className="header-inner">
       <button type="button" className="brand-button" onClick={requestLeave}><Logo/></button>
       {room && <div className="top-meta"><span className="room-tag">{isSolo ? 'Solo' : room.code}</span>
-        {(playing || showResult || isSolo) && <><Timer start={room.startedAt} finish={room.finishedAt}/><span>{room.settings.width} × {room.settings.height}</span><span>{cap(room.settings.difficulty)}</span></>}
+        {(playing || showResult || isSolo) && <><Timer start={room.startedAt} finish={room.finishedAt}/><span>{room.settings.width} × {room.settings.height}</span><span>{puzzleLabel(room.settings)}</span></>}
         {!isSolo && <span><i className="presence online"/> {activeCount}/4 online</span>}
       </div>}
       <div className="header-actions"><button type="button" className="header-button" aria-pressed={dark} onClick={() => theme(!dark)}>Dark mode</button>
@@ -419,7 +450,8 @@ function App() {
           <h1>Play a nonogram</h1>
           <p>Solve a grid on your own or with up to three friends. Walk in Fill mode to fill cells, and click or drag to cross them out.</p>
           <div className="hero-actions">
-            <button className="primary create-button" onClick={openSolo}>Play Solo</button>
+            <button className="primary create-button" onClick={() => openSolo()}>Play Solo</button>
+            <button className="create-button" onClick={() => openSolo('A')}>Picture Pack</button>
             <button className="create-button" onClick={() => { setError(''); setDialog('create'); }}>Create Room</button>
             <form className="join-form" onSubmit={join}>
               <label className="sr-only" htmlFor="invite-code">Invite code</label>
@@ -441,7 +473,7 @@ function App() {
         <section className="panel lobby-panel"><h2>Invite friends</h2>
           <div className="code-box"><strong>{room.code}</strong><button onClick={() => void copy(room.code, 'code')}>{copied === 'code' ? 'Copied!' : 'Copy code'}</button></div>
           <div className="invite-link"><input aria-label="Shareable invite link" readOnly value={inviteLink} onFocus={e => e.target.select()}/><button onClick={() => void copy(inviteLink, 'link')}>{copied === 'link' ? 'Copied!' : 'Copy link'}</button></div>
-          <div className="lobby-settings"><h2>Puzzle</h2><p>{room.settings.width} × {room.settings.height} · {cap(room.settings.difficulty)}{room.board && !ended ? ' · Generated' : ''}</p>
+          <div className="lobby-settings"><h2>Puzzle</h2><p>{room.settings.width} × {room.settings.height} · {puzzleLabel(room.settings)}{room.board && !ended ? ' · Ready' : ''}</p>
             {host && (phase === 'lobby' || ended) && <button onClick={() => { setSettings(room.settings); setDialog('settings'); }}>Change board settings</button>}
           </div>
           {phase === 'generating' && <div role="status" className="generation"><strong>Generating a puzzle…</strong><progress value={room.progress} max={100}/></div>}
@@ -449,7 +481,7 @@ function App() {
           {ended && !host && <p className="muted">Waiting for the host to start a new puzzle.</p>}
           {(phase === 'lobby' || ended) && <div className="lobby-actions">
             {host ? <><button className="primary" disabled={!connected} onClick={() => { setError(''); socket.timeout(5000).emit('game:start', feedback); }}>Start Game <span aria-hidden="true">→</span></button>
-              <button disabled={!connected} onClick={() => { setError(''); socket.timeout(5000).emit('game:generate', feedback); }}>{room.board ? 'Regenerate' : 'Generate puzzle'}</button></> : !ended &&
+              {!room.settings.picture && <button disabled={!connected} onClick={() => { setError(''); socket.timeout(5000).emit('game:generate', feedback); }}>{room.board ? 'Regenerate' : 'Generate puzzle'}</button>}</> : !ended &&
               <button className={me?.ready ? '' : 'primary'} disabled={!connected} onClick={() => socket.timeout(5000).emit('room:ready', feedback)}>{me?.ready ? 'Mark not ready' : 'Mark ready'}</button>}
             {result && <button onClick={() => setDialog('result')}>View last puzzle</button>}
           </div>}
@@ -472,6 +504,7 @@ function App() {
               <strong>{(me?.mode ?? 'walk').toUpperCase()}</strong><kbd>Q</kbd>
             </button>
             <p className="muted">{me?.mode === 'fill' ? 'Walking fills cells.' : 'Walk without changing cells.'}</p>
+            {!!room.board.starters?.length && <p className="muted">Squares with a gold corner are starting clues.</p>}
             {me && insideBoard(me.position, room.settings) && <div className="focused">
               <Clue label={'Row ' + (me.position.y + 1)} values={room.board.rows[me.position.y]} state={room.board.rowState[me.position.y]}/>
               <Clue label={'Column ' + (me.position.x + 1)} values={room.board.columns[me.position.x]} state={room.board.columnState[me.position.x]}/>
@@ -494,18 +527,18 @@ function App() {
     {dialog === 'solo' && <Dialog title="Play Solo" close={() => { solo.cancel(); setDialog(undefined); }}>
       <form onSubmit={event => {
         event.preventDefault();
-        solo.start({ ...settings, name: '' }, profile, () => setDialog(undefined));
+        if (canStartPicture(settings)) solo.start({ ...settings, name: '' }, profile, () => setDialog(undefined));
       }}>
         <SettingsFields solo settings={settings} set={setSettings}/>
         {solo.error && <p className="error" role="alert">{solo.error}</p>}
-        <button className="primary full-width" disabled={solo.busy}>{solo.busy ? 'Generating…' : 'Start Puzzle'}</button>
+        <button className="primary full-width" disabled={solo.busy || !canStartPicture(settings)}>{solo.busy ? 'Generating…' : 'Start Puzzle'}</button>
       </form>
     </Dialog>}
     {dialog === 'create' && <Dialog title="Create a room" close={() => setDialog(undefined)}>
-      <form onSubmit={event => { event.preventDefault(); connection.enter(settings); }}>
+      <form onSubmit={event => { event.preventDefault(); if (canStartPicture(settings)) connection.enter(settings); }}>
         <SettingsFields settings={settings} set={setSettings}/>
         {error && <p className="error" role="alert">{error}</p>}
-        <button className="primary full-width" disabled={busy}>{busy ? 'Creating…' : 'Create Room'}</button>
+        <button className="primary full-width" disabled={busy || !canStartPicture(settings)}>{busy ? 'Creating…' : 'Create Room'}</button>
       </form>
     </Dialog>}
     {(dialog === 'profile' || dialog === 'join') && <Dialog title={dialog === 'join' ? 'Get ready to join' : 'My character'} close={() => setDialog(undefined)}>
@@ -522,11 +555,12 @@ function App() {
     {dialog === 'settings' && room && <Dialog title="Settings" close={() => { setDialog(undefined); controls.current?.focus(); }}>
       {host && (phase === 'lobby' || ended) && <form onSubmit={event => {
         event.preventDefault();
+        if (!canStartPicture(settings, room.settings)) return;
         socket.timeout(4000).emit('room:settings', settings, (err, result) => {
           if (!err && result?.ok) setDialog(undefined);
           else feedback(err, result);
         });
-      }}><SettingsFields settings={settings} set={setSettings}/><button className="primary full-width" disabled={!connected}>Save board settings</button></form>}
+      }}><SettingsFields settings={settings} set={setSettings} saved={room.settings}/><button className="primary full-width" disabled={!connected || !canStartPicture(settings, room.settings)}>Save board settings</button></form>}
       <div className="toggles">
         {playing && <label><input type="checkbox" checked={me?.gridOnly ?? false} onChange={e => grid(e.target.checked)}/> Grid movement only</label>}
         <label><input type="checkbox" checked={dark} onChange={e => theme(e.target.checked)}/> Dark mode</label>
@@ -554,7 +588,7 @@ function App() {
           </i>;
         })}
       </div>
-      <p className="victory-details">{result.settings.width} × {result.settings.height} · {cap(result.settings.difficulty)} · <Timer start={result.startedAt} finish={result.finishedAt}/> · {result.participants} {result.participants === 1 ? 'walker' : 'walkers'}</p>
+      <p className="victory-details">{result.settings.width} × {result.settings.height} · {puzzleLabel(result.settings)} · <Timer start={result.startedAt} finish={result.finishedAt}/> · {result.participants} {result.participants === 1 ? 'walker' : 'walkers'}</p>
       <div className="settings-actions">
         {isSolo ? <>
           <button className="primary" onClick={() => { setSettings(result.settings); setDialog('solo'); }}>Play Again</button>

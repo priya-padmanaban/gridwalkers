@@ -33,7 +33,8 @@ export function newGame(id: string, puzzle: Puzzle): Game {
   const w = puzzle.columns.length;
   const h = puzzle.rows.length;
   const marks = Array<Mark>(w * h).fill(0);
-  const game: Game = { id, puzzle, marks, lives: puzzleLives, view: { id, rows: puzzle.rows, columns: puzzle.columns, cells: [...marks], rowState: [], columnState: [] } };
+  for (const index of puzzle.starters ?? []) marks[index] = puzzle.solution[index] ? 1 : 2;
+  const game: Game = { id, puzzle, marks, lives: puzzleLives, view: { id, rows: puzzle.rows, columns: puzzle.columns, cells: [...marks], rowState: [], columnState: [], starters: puzzle.starters } };
   game.view.rowState = puzzle.rows.map((clues, y) => ({ complete: complete(game, indices(w, y * w, 1)), grey: clues.map(() => false) }));
   game.view.columnState = puzzle.columns.map((clues, x) => ({ complete: complete(game, indices(h, x, w)), grey: clues.map(() => false) }));
   game.view.cells = marks.map((_, i) => shown(game, i, w));
@@ -45,7 +46,7 @@ export function newGame(id: string, puzzle: Puzzle): Game {
 export function attemptMark(game: Game, x: number, y: number, mark: Mark, penalizeIncorrectCrosses = true): Pick<Patch, 'cells' | 'rows' | 'columns' | 'phase' | 'lives' | 'mistakes'> | undefined {
   const lives = game.lives ?? puzzleLives;
   const index = y * game.view.columns.length + x;
-  if (lives <= 0 || game.marks[index] === 1) return;
+  if (lives <= 0 || game.marks[index] === 1 || game.view.starters?.includes(index)) return;
   const filled = game.puzzle.solution[index] === 1;
   if (mark === 1 && !filled && game.view.cells[index] === 2) return;
   if ((mark === 1 && !filled) || (mark === 2 && filled && penalizeIncorrectCrosses)) {

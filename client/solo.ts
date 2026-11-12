@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { attemptCrosses, attemptMark, newGame, recordCrossImage, recordCrossStyles } from '../shared/board.ts';
 import type { Game } from '../shared/board.ts';
 import { boardMargin, constrainPosition, directions, insideBoard } from '../shared/protocol.ts';
-import type { CrossStyle, Direction, Mark, Player, Point, Profile, Settings, Snapshot } from '../shared/protocol.ts';
+import type { CrossStyle, Direction, Mark, Player, Point, Profile, SettingsInput, Snapshot } from '../shared/protocol.ts';
 import type { SoloGeneration } from './solo-worker.ts';
 
 export const soloPlayerId = 'solo';
@@ -29,7 +29,7 @@ export function useSolo(flashMistakes: (boardId: string, cells: number[]) => voi
     setError('');
   }
 
-  function start(settings: Settings, profile: Profile, onStarted: () => void) {
+  function start(settings: SettingsInput, profile: Profile, onStarted: () => void) {
     if (worker.current) return;
     setError('');
     setBusy(true);

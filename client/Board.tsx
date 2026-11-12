@@ -238,6 +238,7 @@ export function BoardCanvas(props: Props) {
       ctx.rect(left, top, width - left, height - top);
       ctx.clip();
       const me = room.players.find(player => player.id === id);
+      const starters = new Set(board.starters);
       const crossFrames = new Map<CrossStyle, ReturnType<ReturnType<typeof loadCrossMedia>>>();
       function frameFor(style: CrossStyle) {
         if (!crossFrames.has(style)) {
@@ -267,6 +268,10 @@ export function BoardCanvas(props: Props) {
         if (mark === 1 && t >= 15) {
           ctx.fillStyle = '#ffffff1f';
           ctx.fillRect(px + 2, py + 2, t - 4, 2);
+        }
+        if (starters.has(i)) {
+          ctx.fillStyle = dark ? '#e9ce83' : '#9b611e';
+          ctx.fillRect(px + 2, py + 2, Math.max(2, t * 0.14), Math.max(2, t * 0.14));
         }
         if (crossFrame) {
           const scale = t * 0.8 / Math.max(crossFrame.width, crossFrame.height);
@@ -416,7 +421,7 @@ export function BoardCanvas(props: Props) {
       if (cells.size > 1) { cross([...cells.values()]); return; }
       if (!cell) return;
       const index = cell.y * room.settings.width + cell.x;
-      if (room.board?.cells[index] === 1) return;
+      if (room.board?.cells[index] === 1 || room.board?.starters?.includes(index)) return;
       const mark = optimistic.current.get(index) ?? room.board?.cells[index];
       change(cell.x, cell.y, mark === 2 ? 0 : 2);
     }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
-import type { Identity, Notice, Patch, Profile, Settings, Snapshot, ToClient, ToServer } from '../shared/protocol.ts';
+import type { Identity, Notice, Patch, Profile, SettingsInput, Snapshot, ToClient, ToServer } from '../shared/protocol.ts';
 
 const token = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), byte => byte.toString(16).padStart(2, '0')).join('');
 const savedToken = (code: string) => localStorage.getItem('gridwalkers:session:' + code);
@@ -107,7 +107,7 @@ export function useConnection(profile: Profile, onRoom: (code: string) => void, 
     return () => { cancelConnect.current?.(); socket.off(); socket.disconnect(); };
   }, [socket]);
 
-  function enter(settings: Settings | string, chosen = profile) {
+  function enter(settings: SettingsInput | string, chosen = profile) {
     if (busy || cancelConnect.current) return;
     const currentAttempt = ++attempt.current;
     setBusy(true);

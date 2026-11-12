@@ -39,10 +39,11 @@ export function isUploadedCrossStyle(style: unknown): style is UploadedCrossStyl
 export type Profile = { name: string; skin: number; hair: number; style: number; shirt: number; accessory: number; crossStyle?: CrossStyle; crossImage?: string };
 export const defaultProfile: Profile = { name: 'Walker', skin: 0, hair: 0, style: 1, shirt: 0, accessory: 0 };
 export const defaultSettings = { width: 15, height: 15, difficulty: 'medium', name: '', penalizeIncorrectCrosses: true } as const;
-export type Settings = { width: number; height: number; difficulty: Difficulty; name: string; penalizeIncorrectCrosses?: boolean };
+export type Settings = { width: number; height: number; difficulty: Difficulty; name: string; penalizeIncorrectCrosses?: boolean; picture?: string };
+export type SettingsInput = Settings & { imageCells?: string };
 export type Player = { id: string; profile: Profile; color: string; connected: boolean; ready: boolean; position: Point; direction: Direction; mode: Mode; gridOnly?: boolean };
 export type Line = { complete: boolean; grey: boolean[] };
-export type Board = { id: string; rows: number[][]; columns: number[][]; cells: Mark[]; rowState: Line[]; columnState: Line[]; crossStyles?: Partial<Record<number, CrossStyle>>; crossImages?: CrossImages };
+export type Board = { id: string; rows: number[][]; columns: number[][]; cells: Mark[]; rowState: Line[]; columnState: Line[]; crossStyles?: Partial<Record<number, CrossStyle>>; crossImages?: CrossImages; starters?: number[] };
 export type EndPhase = 'completed' | 'failed';
 export type PuzzleResult = { phase: EndPhase; settings: Settings; cells: Mark[]; startedAt?: number; finishedAt?: number; participants: number; crossStyles?: Board['crossStyles']; crossImages?: CrossImages };
 export type Phase = 'lobby' | 'generating' | 'playing' | EndPhase;
@@ -72,11 +73,11 @@ export type Identity = { id: string; room: Snapshot };
 export type Result<T = void> = { ok: true; value: T } | { ok: false; error: string };
 export type Ack<T = void> = (result: Result<T>) => void;
 export interface ToServer {
-  'room:create': (data: { token: string; profile: Profile; settings: Settings }, ack: Ack<Identity>) => void;
+  'room:create': (data: { token: string; profile: Profile; settings: SettingsInput }, ack: Ack<Identity>) => void;
   'room:join': (data: { code: string; token: string; profile: Profile }, ack: Ack<Identity>) => void;
   'room:leave': (ack: Ack) => void;
   'room:ready': (ack: Ack) => void;
-  'room:settings': (settings: Settings, ack: Ack) => void;
+  'room:settings': (settings: SettingsInput, ack: Ack) => void;
   'room:snapshot': (ack: Ack<Snapshot>) => void;
   'player:profile': (profile: Profile, ack: Ack) => void;
   'game:generate': (ack: Ack) => void;

@@ -1,9 +1,9 @@
 import { Worker } from 'node:worker_threads';
 import { resolve } from 'node:path';
-import type { Settings } from '../shared/protocol.ts';
+import type { SettingsInput } from '../shared/protocol.ts';
 import type { Puzzle } from '../shared/puzzle.ts';
 
-export function generateAsync(settings: Settings, progress: (value: number) => void): Promise<Puzzle> {
+export function generateAsync(settings: SettingsInput, progress: (value: number) => void): Promise<Puzzle> {
   const limits = {
     candidates: Number(process.env.GENERATION_CANDIDATES) || 1600,
     operations: Number(process.env.GENERATION_OPERATIONS) || 120_000_000,

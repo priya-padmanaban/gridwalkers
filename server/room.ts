@@ -1,7 +1,8 @@
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { accessories, crossStyleIds, crossUploadMaxBytes, crossUploadMaxDimension, difficulties, hairColors, isUploadedCrossStyle, shirts, skins, styles } from '../shared/protocol.ts';
-import type { Mark, Patch, Point, Profile, PuzzleResult, Settings, Snapshot, Update } from '../shared/protocol.ts';
+import type { Mark, Patch, Point, Profile, PuzzleResult, SettingsInput, Snapshot, Update } from '../shared/protocol.ts';
 import { attemptCrosses, attemptMark, recordCrossImage, recordCrossStyles } from '../shared/board.ts';
+import { getPicture, validImageCells } from '../shared/pictures.ts';
 import type { Room, Session } from './store.ts';
 
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -20,7 +21,7 @@ export function tokenOf(value: unknown) {
   if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) throw new Error('Invalid session token.');
   return digest(value);
 }
-export function settingsOf(value: Settings) {
+export function settingsOf(value: SettingsInput) {
   if (!value || !Number.isInteger(value.width) || !Number.isInteger(value.height) || value.width < 5 || value.width > 60
       || value.height < 5 || value.height > 60 || !difficulties.includes(value.difficulty) || typeof value.name !== 'string') {
     throw new Error('Choose a width and height between 5 and 60 and a valid difficulty.');
@@ -28,10 +29,18 @@ export function settingsOf(value: Settings) {
   if (value.penalizeIncorrectCrosses !== undefined && typeof value.penalizeIncorrectCrosses !== 'boolean') {
     throw new Error('Choose whether incorrect crosses cost a life.');
   }
+  const picture = getPicture(value.picture);
+  if (value.picture !== undefined && value.picture !== 'upload' && !picture) throw new Error('Choose a picture from the pack.');
   return {
-    width: value.width, height: value.height, difficulty: value.difficulty, name: value.name.trim().slice(0, 32),
+    width: picture?.width ?? value.width, height: picture?.height ?? value.height, difficulty: picture?.difficulty ?? value.difficulty,
+    name: value.name.trim().slice(0, 32), picture: value.picture,
     penalizeIncorrectCrosses: value.penalizeIncorrectCrosses ?? true,
   };
+}
+export function imageCellsOf(settings: SettingsInput, cells?: string) {
+  if (settings.picture !== 'upload') return;
+  if (!validImageCells(settings.width, settings.height, cells)) throw new Error('Choose an image with both filled and empty cells.');
+  return cells;
 }
 export function profileOf(value: Profile): Profile {
   const valid = (i: number, options: unknown[]) => Number.isInteger(i) && i >= 0 && i < options.length;

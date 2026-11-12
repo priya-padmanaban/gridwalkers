@@ -1,6 +1,8 @@
 import { describe as suite, expect, it } from 'vitest';
 import { analyze, Budget, classify, clues, countSolutions, describe, generate, solve } from '../shared/puzzle.ts';
 import { difficulties, defaultSettings } from '../shared/protocol.ts';
+import { picturePack, picturePuzzle } from '../shared/pictures.ts';
+import { attemptMark, newGame } from '../shared/board.ts';
 
 const budget = () => new Budget(120_000_000, Date.now() + 6000);
 const read = (text: string) => [...text].map(Number);
@@ -8,6 +10,31 @@ const randomFrom = (seed: number) => () => {
   seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
   return seed / 2 ** 32;
 };
+
+suite('picture boards', () => {
+  it('solves all 15 reference grids with only the provided starter cells', () => {
+    expect(picturePack.map(picture => picture.id).join('')).toBe('ABCDEFGHIJKLMNO');
+    for (const { puzzle, width, height } of picturePack) {
+      expect(puzzle.solution.length).toBe(width * height);
+      const seed = puzzle.solution.map((value, i) => puzzle.starters?.includes(i) ? value : -1);
+      expect(solve(puzzle, budget(), seed)?.cells).toEqual(puzzle.solution);
+    }
+    expect(picturePack.filter(({ puzzle }) => puzzle.starters?.length).map(({ id }) => id)).toEqual(['A', 'H']);
+  });
+
+  it('preserves an uploaded mask and supplies locked starters when the clues are ambiguous', () => {
+    const imageCells = '1000001000001000001000001';
+    const puzzle = picturePuzzle({ ...defaultSettings, picture: 'upload', width: 5, height: 5, imageCells })!;
+    expect(puzzle.solution).toEqual(read(imageCells));
+    expect(puzzle.starters!.length).toBeGreaterThan(0);
+    const seed = puzzle.solution.map((value, i) => puzzle.starters!.includes(i) ? value : -1);
+    expect(solve(puzzle, budget(), seed)?.cells).toEqual(puzzle.solution);
+    const game = newGame('upload', puzzle);
+    expect(game.view.rowState.every(row => row.complete)).toBe(false);
+    const index = puzzle.starters![0];
+    expect(attemptMark(game, index % 5, Math.floor(index / 5), 0)).toBeUndefined();
+  });
+});
 
 suite('line deductions', () => {
   it('builds empty, full, and mixed clues', () => {

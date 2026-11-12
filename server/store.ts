@@ -11,6 +11,7 @@ export type Room = {
   sessions: Session[]; phase: Snapshot['phase']; progress: number; game?: Game;
   startedAt?: number; finishedAt?: number; participants: string[]; error?: string;
   lastResult?: PuzzleResult;
+  imageCells?: string;
   generation?: { id: string; until: number; start: boolean };
 };
 const commit = `

@@ -2,7 +2,7 @@ import type { Difficulty, Settings } from './protocol.ts';
 import { clues } from './clues.ts';
 export { clues } from './clues.ts';
 
-export type Puzzle = { solution: number[]; rows: number[][]; columns: number[][] };
+export type Puzzle = { solution: number[]; rows: number[][]; columns: number[][]; starters?: number[] };
 export type Metrics = { passes: number; initial: number; deductions: number; revealed: number[]; slow: number; chain: number };
 
 export function describe(solution: number[], width: number, height: number): Puzzle {

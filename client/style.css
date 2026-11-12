@@ -152,6 +152,11 @@ dialog::backdrop { background: #1c3b2f85; backdrop-filter: blur(3px); }
 .dialog-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 18px; }
 .dialog-heading h2 { font: 400 2.55rem/.95 var(--serif); }
 .settings-fields, .toggles { display: grid; gap: 13px; }
+.picture-input { display: grid; gap: 10px; }
+.picture-input .picture-invert { display: flex; align-items: center; gap: 8px; }
+.picture-preview { display: grid; width: min(100%, 185px); max-height: 185px; gap: 1px; justify-self: center; background: var(--border); border: 1px solid var(--border); }
+.picture-preview i { background: var(--paper); }
+.picture-preview i[data-filled] { background: #467054; }
 .field-row, .profile-options { display: flex; gap: 8px; align-items: end; }
 .field-row > *, .profile-options > * { flex: 1; min-width: 0; }
 .profile-options { margin: 15px 0; }

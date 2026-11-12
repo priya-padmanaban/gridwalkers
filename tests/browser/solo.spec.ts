@@ -1,5 +1,38 @@
 import { expect, test } from '@playwright/test';
 
+test('starts a reference picture and converts a 5×5 upload cell for cell', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Picture Pack' }).click();
+  const source = page.getByLabel('Puzzle source');
+  await expect(source.locator('optgroup[label="Picture pack"] option')).toHaveCount(15);
+  await page.getByRole('button', { name: 'Start Puzzle' }).click();
+  await expect(page.getByText('Picture A', { exact: true })).toBeVisible();
+  await expect(page.getByText('Squares with a gold corner are starting clues.')).toBeVisible();
+  await page.getByRole('button', { name: 'Gridwalkers' }).click();
+  await page.getByRole('button', { name: 'Leave game', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Play Solo' }).click();
+  await source.selectOption('upload');
+  const png = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 5;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, 5, 5);
+    ctx.fillStyle = 'black';
+    for (let i = 0; i < 5; i++) ctx.fillRect(i, i, 1, 1);
+    return canvas.toDataURL().split(',')[1];
+  });
+  await page.getByLabel('Upload puzzle image').setInputFiles({ name: 'diagonal.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+  const preview = page.getByRole('img', { name: 'Converted 5 by 5 grid' });
+  await expect(preview).toBeVisible();
+  expect(await preview.locator('i').evaluateAll(cells => cells.map(cell => Number(cell.hasAttribute('data-filled'))).join('')))
+    .toBe('1000001000001000001000001');
+  await page.getByRole('button', { name: 'Start Puzzle' }).click();
+  await expect(page.getByText('Uploaded image', { exact: true })).toBeVisible();
+  await expect(page.getByText('Squares with a gold corner are starting clues.')).toBeVisible();
+});
+
 test('plays a solo puzzle without opening a room socket', async ({ page }) => {
   let socketAttempts = 0;
   await page.routeWebSocket('**/api/ws*', socket => {

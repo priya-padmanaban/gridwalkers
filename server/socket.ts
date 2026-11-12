@@ -5,7 +5,7 @@ import { boardMargin, constrainPosition, crossBatchLimit, crossUploadMaxBytes, d
 import type { Ack, Identity, Motion, Snapshot, ToClient, ToServer, Update } from '../shared/protocol.ts';
 import { newGame } from '../shared/board.ts';
 import { generateAsync } from './generation.ts';
-import { addSession, apply, applyCrosses, checkCrossImageCapacity, codeOf, digest, finishedPuzzle, full, lease, profileOf, reconcile, returnToLobby, roomCode, settingsOf, snapshot, start, tokenOf } from './room.ts';
+import { addSession, apply, applyCrosses, checkCrossImageCapacity, codeOf, digest, finishedPuzzle, full, imageCellsOf, lease, profileOf, reconcile, returnToLobby, roomCode, settingsOf, snapshot, start, tokenOf } from './room.ts';
 import { RoomStore } from './store.ts';
 import type { Room, Session } from './store.ts';
 
@@ -108,11 +108,12 @@ export function createGameServer() {
     socket.on('room:create', (data, ack) => void answer(ack, () => enter(async () => {
       const token = tokenOf(data?.token);
       const settings = settingsOf(data?.settings);
+      const imageCells = imageCellsOf(settings, data.settings.imageCells);
       const profile = profileOf(data?.profile);
       const ip = String(socket.handshake.headers['x-forwarded-for'] ?? socket.handshake.address).split(',')[0].trim();
       if (!await store.limit('create:' + digest(ip), 12, 60_000)) throw new Error('Too many rooms created. Try again shortly.');
       for (let i = 0; i < 12; i++) {
-        const room: Room = { code: roomCode(), host: '', settings, sessions: [], version: 0, revision: 0, phase: 'lobby', progress: 0, participants: [] };
+        const room: Room = { code: roomCode(), host: '', settings, imageCells, sessions: [], version: 0, revision: 0, phase: 'lobby', progress: 0, participants: [] };
         const session = addSession(room, socket.id, token, profile, Date.now());
         room.host = session.player.id;
         if (await store.create(room)) return { room, session };
@@ -157,8 +158,11 @@ export function createGameServer() {
         if (room.phase === 'completed' || room.phase === 'failed') returnToLobby(room);
         if (room.phase !== 'lobby') throw new Error('Settings can only change in the lobby.');
         const previous = room.settings;
+        const sameSize = settings.width === previous.width && settings.height === previous.height;
+        const imageCells = imageCellsOf(settings, data.imageCells ?? (sameSize ? room.imageCells : undefined));
+        if (!sameSize || settings.difficulty !== previous.difficulty || settings.picture !== previous.picture || imageCells !== room.imageCells) room.game = undefined;
         room.settings = settings;
-        if (settings.width !== previous.width || settings.height !== previous.height || settings.difficulty !== previous.difficulty) room.game = undefined;
+        room.imageCells = imageCells;
         room.error = undefined;
         return full(room);
       }, true);
@@ -193,7 +197,7 @@ export function createGameServer() {
       }));
       void (async () => {
         try {
-          const puzzle = await generateAsync(room.settings, progress => {
+          const puzzle = await generateAsync({ ...room.settings, imageCells: room.imageCells }, progress => {
             void updateJob(current => {
               if (progress <= current.progress) return;
               current.progress = progress;
@@ -213,7 +217,9 @@ export function createGameServer() {
             current.phase = 'lobby';
             current.generation = undefined;
             current.progress = 0;
-            current.error = 'No puzzle was found within the generation budget. Try again for a new seed.';
+            current.error = current.settings.picture === 'upload'
+              ? 'Could not build a playable board from this image. Try a smaller grid or a simpler image.'
+              : 'No puzzle was found within the generation budget. Try again for a new seed.';
             return full(current);
           }).catch(() => {});
         }
