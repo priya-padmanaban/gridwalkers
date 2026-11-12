@@ -7,6 +7,7 @@ export const crossStyles = {
   frog: { label: 'Frog', image: new URL('./assets/frog-cross.png', import.meta.url).href },
   poop: { label: 'Poop', symbol: '💩' },
   'the-rock': { label: 'The Rock', image: new URL('./assets/the-rock-cross.gif', import.meta.url).href },
+  knight: { label: 'Knight', image: new URL('./assets/knight-cross.png', import.meta.url).href },
 } as const satisfies Record<BuiltInCrossStyle, { label: string; image: string } | { label: string; symbol: string }>;
 
 export type CrossUpload = { style: UploadedCrossStyle; image: string };
