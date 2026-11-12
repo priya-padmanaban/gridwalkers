@@ -112,8 +112,8 @@ test('two walkers customize, join via invite, mark together, and share a victory
     await expect(host.getByRole('button', { name: 'Play Solo' })).toBeVisible();
     await expect(guest.getByRole('button', { name: 'Start Game' })).toBeEnabled();
     await expect(guest.getByRole('button', { name: 'Regenerate' })).toBeEnabled();
-    await guest.getByRole('button', { name: 'Personal settings' }).click();
-    const personal = guest.getByRole('dialog', { name: 'Personal settings' });
+    await guest.getByRole('button', { name: 'Settings', exact: true }).click();
+    const personal = guest.getByRole('dialog', { name: 'Settings', exact: true });
     await expect(personal.getByText('Cross style', { exact: true })).toBeVisible();
     await expect(personal.getByLabel('Puzzle source')).toHaveCount(0);
     await personal.getByRole('button', { name: 'Close' }).click();

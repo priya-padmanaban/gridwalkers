@@ -470,7 +470,7 @@ function App() {
       </div>}
       <div className="header-actions"><button type="button" className="header-button" aria-pressed={dark} onClick={() => theme(!dark)}>Dark mode</button>
       <button className="header-button" onClick={() => setDialog(room ? 'personal-settings' : 'profile')}>
-        {room ? <><span aria-hidden="true">⚙</span> Personal settings</> : <><Avatar profile={profile} size={26}/> My character</>}
+        {room ? <><span aria-hidden="true">⚙</span> Settings</> : <><Avatar profile={profile} size={26}/> My character</>}
       </button>
       {room && !isSolo && <button type="button" className="header-button" onClick={requestLeave}>Leave room</button>}</div>
     </div></header>
@@ -600,7 +600,7 @@ function App() {
         : <p>Board settings are available to the current host between games.</p>}
       {error && <p className="error" role="alert">{error}</p>}
     </Dialog>}
-    {dialog === 'personal-settings' && room && <Dialog title="Personal settings" close={stay}>
+    {dialog === 'personal-settings' && room && <Dialog title="Settings" close={stay}>
       <div className="toggles">
         {playing && <label><input type="checkbox" checked={me?.gridOnly ?? false} onChange={e => grid(e.target.checked)}/> Grid movement only</label>}
         <label><input type="checkbox" checked={dark} onChange={e => theme(e.target.checked)}/> Dark mode</label>
