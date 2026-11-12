@@ -173,7 +173,7 @@ dialog::backdrop { background: #1c3b2f85; backdrop-filter: blur(3px); }
 .cross-style-options { display: flex; flex-wrap: wrap; gap: 6px; }
 .cross-style-options button { display: grid; justify-items: center; gap: 4px; padding: 5px 9px; }
 .cross-style-options button[aria-pressed=true] { outline: 2px solid #7b9d88; outline-offset: -2px; }
-.cross-style-options img { width: 32px; height: 27px; object-fit: contain; }
+.cross-style-options img, .cross-style-options video { width: 32px; height: 27px; object-fit: contain; }
 .cross-style-options span { font-size: 1.35rem; line-height: 27px; }
 .cross-upload { margin-top: 10px; }
 .settings-actions { display: flex; justify-content: end; gap: 8px; }

@@ -55,18 +55,22 @@ export function profileOf(value: Profile): Profile {
   if (crossStyle) return { ...profile, crossStyle };
   if (!isUploadedCrossStyle(value.crossStyle)) return profile;
   const image = value.crossImage;
-  if (typeof image !== 'string' || image.length > Math.ceil(crossUploadMaxBytes / 3) * 4 + 22) {
-    throw new Error('Upload a cross image up to 256 KB.');
+  if (typeof image !== 'string' || image.length > Math.ceil(crossUploadMaxBytes / 3) * 4 + 23) {
+    throw new Error('Upload a cross image or video up to 512 KB.');
   }
-  const match = /^data:image\/(png|gif);base64,([A-Za-z0-9+/]+={0,2})$/.exec(image);
+  const match = /^data:(image\/png|video\/mp4|video\/webm);base64,([A-Za-z0-9+/]+={0,2})$/.exec(image);
   const bytes = Buffer.from(match?.[2] ?? '', 'base64');
-  const png = match?.[1] === 'png' && bytes.length >= 24 && bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')) && bytes.toString('ascii', 12, 16) === 'IHDR';
-  const gif = match?.[1] === 'gif' && bytes.length >= 13 && /^GIF8[79]a$/.test(bytes.toString('ascii', 0, 6));
-  const width = png ? bytes.readUInt32BE(16) : gif ? bytes.readUInt16LE(6) : 0;
-  const height = png ? bytes.readUInt32BE(20) : gif ? bytes.readUInt16LE(8) : 0;
-  if (!width || !height || width > crossUploadMaxDimension || height > crossUploadMaxDimension ||
+  const png = match?.[1] === 'image/png' && bytes.length >= 24 && bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')) && bytes.toString('ascii', 12, 16) === 'IHDR';
+  const width = png ? bytes.readUInt32BE(16) : 0;
+  const height = png ? bytes.readUInt32BE(20) : 0;
+  const validImage = width > 0 && width <= crossUploadMaxDimension && height > 0 && height <= crossUploadMaxDimension;
+  const mp4 = match?.[1] === 'video/mp4' && bytes.length >= 16 && bytes.toString('ascii', 4, 8) === 'ftyp' &&
+    bytes.readUInt32BE(0) >= 16 && bytes.readUInt32BE(0) <= bytes.length;
+  const webm = match?.[1] === 'video/webm' && bytes.length >= 8 && bytes.readUInt32BE(0) === 0x1a45dfa3 &&
+    bytes.subarray(0, 128).includes(Buffer.from([0x42, 0x82, 0x84, 0x77, 0x65, 0x62, 0x6d]));
+  if ((!validImage && !mp4 && !webm) ||
       bytes.length > crossUploadMaxBytes || bytes.toString('base64') !== match?.[2] || `upload:${digest(image)}` !== value.crossStyle) {
-    throw new Error('Upload a valid image up to 256 KB and 512 × 512 pixels.');
+    throw new Error('Upload a valid image, MP4, or WebM file up to 512 KB.');
   }
   return { ...profile, crossStyle: value.crossStyle, crossImage: image };
 }

@@ -2,7 +2,7 @@ import { createRoot } from 'react-dom/client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, FormEvent, ReactNode, SetStateAction } from 'react';
 import { clues } from '../shared/clues.ts';
-import { accessories, crossBatchLimit, crossStyleIds, defaultProfile, defaultSettings, difficulties, hairColors, insideBoard, isUploadedCrossStyle, puzzleLives, shirts, skins, styles } from '../shared/protocol.ts';
+import { accessories, crossBatchLimit, crossStyleIds, defaultProfile, defaultSettings, difficulties, hairColors, insideBoard, puzzleLives, shirts, skins, styles } from '../shared/protocol.ts';
 import type { CrossStyle, Direction, Line, Mark, Point, Profile, PuzzleResult, Result, Settings, SettingsInput, Snapshot } from '../shared/protocol.ts';
 import { getPicture, picturePack, validImageCells } from '../shared/pictures.ts';
 import { PictureInput } from './PictureInput.tsx';
@@ -10,9 +10,10 @@ import { Avatar } from './sprite.tsx';
 import { BoardCanvas, mistakeFlashDuration } from './Board.tsx';
 import type { BoardControls, MistakeFlashes } from './Board.tsx';
 import { useConnection } from './connection.ts';
-import { crossImageSource, crossStyles, readCrossStyle, readCrossUpload } from './crossStyles.ts';
+import { crossStyles, readCrossStyle, readCrossUpload } from './crossStyles.ts';
 import type { CrossUpload } from './crossStyles.ts';
-import { prepareCrossUpload } from './crossMedia.ts';
+import { isVideoCrossSource, prepareCrossUpload } from './crossMedia.ts';
+import { ResultPicture } from './ResultPicture.tsx';
 import { soloPlayerId, useSolo } from './solo.ts';
 import './style.css';
 
@@ -89,6 +90,10 @@ function SettingsFields({ settings, set, solo = false, saved }: { settings: Sett
       onChange={e => set({ ...settings, penalizeIncorrectCrosses: e.target.checked })}/> Incorrect crosses cost a life</label></div>}
   </div>;
 }
+function CrossPreview({ source }: { source: string }) {
+  return isVideoCrossSource(source) ? <video src={source} muted playsInline preload="auto" aria-hidden="true"/> : <img src={source} alt="" />;
+}
+
 function CrossStylePicker({ value, upload, select }: { value: CrossStyle; upload?: CrossUpload; select(style: CrossStyle, nextUpload?: CrossUpload): Promise<void> }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
@@ -113,15 +118,15 @@ function CrossStylePicker({ value, upload, select }: { value: CrossStyle; upload
       {crossStyleIds.map(style => {
         const option = crossStyles[style];
         return <button key={style} type="button" aria-pressed={value === style} onClick={() => void apply(style)}>
-          {'image' in option ? <img src={option.image} alt="" /> : <span aria-hidden="true">{option.symbol}</span>}
+          {'image' in option ? <CrossPreview source={option.image}/> : <span aria-hidden="true">{option.symbol}</span>}
           {option.label}
         </button>;
       })}
       {upload && <button type="button" aria-pressed={value === upload.style} onClick={() => void apply(upload.style)}>
-        <img src={upload.image} alt="" /> Custom
+        <CrossPreview source={upload.image}/> Custom
       </button>}
     </div>
-    <label className="cross-upload">Upload image or GIF<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={event => {
+    <label className="cross-upload">Upload image or video<input type="file" accept="image/png,image/jpeg,image/webp,video/mp4,video/webm" onChange={event => {
       const file = event.currentTarget.files?.[0];
       event.currentTarget.value = '';
       if (file) void apply(file);
@@ -615,19 +620,7 @@ function App() {
       title={result.phase === 'failed' ? 'Out of lives' : 'Puzzle Complete!'}
       close={() => { if (boardId) setSeenVictory(boardId); setDialog(undefined); }}>
       {result.phase === 'failed' && <p>The puzzle ended after three mistakes.</p>}
-      <div className="victory-picture" style={{ gridTemplateColumns: 'repeat(' + result.settings.width + ', 1fr)', aspectRatio: result.settings.width + ' / ' + result.settings.height }} aria-label="Final puzzle board" role="img">
-        {result.cells.map((cell, i) => {
-          const style = result.crossStyles?.[i] ?? crossStyle;
-          const uploaded = isUploadedCrossStyle(style) ? result.crossImages?.[style] ?? (style === crossStyle ? crossImage : undefined) : undefined;
-          const source = cell === 2 ? crossImageSource(style, uploaded) : undefined;
-          if (cell !== 2 || (!source && style !== 'poop')) {
-            return <i className={cell === 1 ? 'filled' : cell === 2 ? 'crossed' : ''} key={i}/>;
-          }
-          return <i className="custom-cross" key={i}>
-            {source ? <img src={source} alt="" /> : <span style={{ fontSize: 65 / result.settings.width + 'cqw' }}>{crossStyles.poop.symbol}</span>}
-          </i>;
-        })}
-      </div>
+      <ResultPicture result={result} crossStyle={crossStyle} crossImage={crossImage}/>
       <p className="victory-details">{result.settings.width} × {result.settings.height} · {puzzleLabel(result.settings)} · <Timer start={result.startedAt} finish={result.finishedAt}/> · {result.participants} {result.participants === 1 ? 'walker' : 'walkers'}</p>
       <div className="settings-actions">
         {isSolo ? <>

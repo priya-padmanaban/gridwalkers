@@ -33,6 +33,10 @@ export function BoardCanvas(props: Props) {
     const element = canvas.current!;
     const ctx = element.getContext('2d')!;
     const crossMedia = new Map<string, ReturnType<typeof loadCrossMedia>>();
+    function clearCrossMedia() {
+      for (const media of crossMedia.values()) media.dispose();
+      crossMedia.clear();
+    }
     const camera = { tile: 30, x: 0, y: 0, follow: true };
     let width = 0;
     let height = 0;
@@ -202,7 +206,7 @@ export function BoardCanvas(props: Props) {
         pressed.clear();
         previousFrame = now;
         flashes.clear();
-        crossMedia.clear();
+        clearCrossMedia();
         previousCells = undefined;
         camera.tile = Math.max(w, h) > 22 ? 28 : 34;
         camera.follow = true;
@@ -239,7 +243,7 @@ export function BoardCanvas(props: Props) {
       ctx.clip();
       const me = room.players.find(player => player.id === id);
       const starters = new Set(board.starters);
-      const crossFrames = new Map<CrossStyle, ReturnType<ReturnType<typeof loadCrossMedia>>>();
+      const crossFrames = new Map<CrossStyle, ReturnType<ReturnType<typeof loadCrossMedia>['frame']>>();
       function frameFor(style: CrossStyle) {
         if (!crossFrames.has(style)) {
           const uploaded = isUploadedCrossStyle(style) ? board.crossImages?.[style] ?? (style === crossStyle ? crossImage : undefined) : undefined;
@@ -250,7 +254,7 @@ export function BoardCanvas(props: Props) {
             media = loadCrossMedia(source);
             crossMedia.set(source, media);
           }
-          crossFrames.set(style, media(now, reduced));
+          crossFrames.set(style, media.frame(reduced));
         }
         return crossFrames.get(style);
       }
@@ -461,6 +465,7 @@ export function BoardCanvas(props: Props) {
     frame = requestAnimationFrame(render);
     return () => {
       cancelAnimationFrame(frame);
+      clearCrossMedia();
       element.removeEventListener('pointerdown', down);
       element.removeEventListener('pointermove', move);
       element.removeEventListener('pointerup', up);

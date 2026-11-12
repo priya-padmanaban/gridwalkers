@@ -140,7 +140,7 @@ test('left-drag crosses every tile in its path and right-click leaves it alone',
   await expect(page.getByText('3 / 3', { exact: true })).toBeVisible();
 });
 
-test('saves an uploaded GIF and animates its cross on the board', async ({ page }) => {
+test('rejects GIFs and saves and plays an uploaded video cross', async ({ page }) => {
   const clues = Array.from({ length: 5 }, () => [1]);
   const puzzle = { rows: clues, columns: clues, solution: Array.from({ length: 25 }, (_, i) => Number(i % 6 === 0)) };
   await page.route('**/client/solo-worker.ts*', route => route.fulfill({
@@ -151,7 +151,13 @@ test('saves an uploaded GIF and animates its cross on the board', async ({ page 
   await page.goto('/');
   await page.getByRole('button', { name: 'My character' }).click();
   await expect(page.getByRole('button', { name: 'The Rock' })).toBeVisible();
-  await page.getByLabel('Upload image or GIF').setInputFiles('client/assets/the-rock-cross.gif');
+  const upload = page.getByLabel('Upload image or video');
+  await upload.setInputFiles({
+    name: 'tiny.gif', mimeType: 'image/gif',
+    buffer: Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'),
+  });
+  await expect(page.getByRole('alert')).toHaveText('Choose a PNG, JPEG, WebP, MP4, or WebM file.');
+  await upload.setInputFiles('client/assets/the-rock-cross.mp4');
   await expect(page.getByRole('button', { name: 'Custom' })).toHaveAttribute('aria-pressed', 'true');
   await page.reload();
   await page.getByRole('button', { name: 'Play Solo' }).click();

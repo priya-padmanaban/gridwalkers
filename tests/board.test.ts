@@ -119,12 +119,13 @@ describe('room authority', () => {
   });
   it('publishes a custom cross image once and preserves it with the finished board', () => {
     const room = makeRoom();
-    const gif = readFileSync(new URL('../client/assets/the-rock-cross.gif', import.meta.url));
-    const image = 'data:image/gif;base64,' + gif.toString('base64');
+    const clip = readFileSync(new URL('../client/assets/the-rock-cross.mp4', import.meta.url));
+    const image = 'data:video/mp4;base64,' + clip.toString('base64');
     const style = `upload:${digest(image)}` as const;
     const profile = profileOf({ ...defaultProfile, crossStyle: style, crossImage: image });
     expect(() => profileOf({ ...profile, crossImage: image + 'AAAA' })).toThrow();
-    expect(() => profileOf({ ...profile, crossImage: image.replace('image/gif', 'image/svg+xml') })).toThrow();
+    const gif = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    expect(() => profileOf({ ...profile, crossStyle: `upload:${digest(gif)}`, crossImage: gif })).toThrow();
     const player = addSession(room, 'socket-a', 'hash-a', profile, 1000);
     expect(apply(room, player, 2, 0, 2, 1100)).toMatchObject({ crossStyles: { 2: style }, crossImages: { [style]: image } });
     const second = apply(room, player, 3, 0, 2, 1100);

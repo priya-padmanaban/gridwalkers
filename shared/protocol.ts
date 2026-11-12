@@ -31,7 +31,7 @@ export type BuiltInCrossStyle = typeof crossStyleIds[number];
 export type UploadedCrossStyle = `upload:${string}`;
 export type CrossStyle = BuiltInCrossStyle | UploadedCrossStyle;
 export type CrossImages = Partial<Record<UploadedCrossStyle, string>>;
-export const crossUploadMaxBytes = 256 * 1024;
+export const crossUploadMaxBytes = 512 * 1024;
 export const crossUploadMaxDimension = 512;
 export function isUploadedCrossStyle(style: unknown): style is UploadedCrossStyle {
   return typeof style === 'string' && /^upload:[a-f0-9]{64}$/.test(style);
