@@ -189,6 +189,38 @@ function Players({ room, id }: { room: Snapshot; id: string }) {
     </li>)}
   </ul>;
 }
+function PassHostDialog({ players, enabled, pass, close }: {
+  players: Snapshot['players']; enabled: boolean; pass(playerId: string): Promise<Result>; close(): void;
+}) {
+  const [target, setTarget] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const canPass = enabled && !busy && players.some(player => player.id === target);
+  return <Dialog title="Pass host" close={close}>
+    <form onSubmit={async event => {
+      event.preventDefault();
+      if (!canPass) return;
+      setBusy(true);
+      setError('');
+      try {
+        const result = await pass(target);
+        if (result.ok) close();
+        else setError(result.error);
+      } catch {
+        setError('The room service did not respond. Try again.');
+      } finally {
+        setBusy(false);
+      }
+    }}>
+      <label>New host<select value={players.some(player => player.id === target) ? target : ''} disabled={busy || !enabled} onChange={event => setTarget(event.target.value)}>
+        <option value="">Choose a player</option>
+        {players.map(player => <option value={player.id} key={player.id}>{player.profile.name}</option>)}
+      </select></label>
+      {error && <p className="error" role="alert">{error}</p>}
+      <button type="submit" className="primary full-width" disabled={!canPass}>{busy ? 'Passing host…' : 'Pass host'}</button>
+    </form>
+  </Dialog>;
+}
 function Clue({ label, values, state }: { label: string; values: number[]; state: Line }) {
   return <div className="focus-clue"><span>{label}{state.complete && ' ✓'}</span><div>
     {values.map((value, i) => <b key={i} className={state.grey[i] ? 'grey-clue' : ''} aria-label={state.grey[i] ? value + ' complete' : String(value)}>{value}</b>)}
@@ -229,7 +261,7 @@ function playChime() {
 function App() {
   const [profile, setProfile] = useState(readProfile);
   const [invite, setInvite] = useState(roomRoute);
-  const [dialog, setDialog] = useState<'solo' | 'create' | 'profile' | 'join' | 'settings' | 'leave' | 'result'>();
+  const [dialog, setDialog] = useState<'solo' | 'create' | 'profile' | 'join' | 'personal-settings' | 'board-settings' | 'leave' | 'result' | 'pass-host'>();
   const [settings, setSettings] = useState<SettingsInput>({ ...defaultSettings });
   const [zoom, setZoom] = useState(100);
   const [copied, setCopied] = useState('');
@@ -267,10 +299,13 @@ function App() {
   const { socket, error, setError, busy } = connection;
   const me = room?.players.find(player => player.id === id);
   const host = room?.host === id;
+  const hostCandidates = room?.players.filter(player => player.id !== id && player.connected) ?? [];
+  const canPassHost = !isSolo && host && connected && hostCandidates.length > 0;
   const boardId = room?.board?.id;
   const phase = room?.phase;
   const playing = phase === 'playing' && !!boardId;
   const ended = phase === 'completed' || phase === 'failed';
+  const canEditBoard = !isSolo && host && (phase === 'lobby' || ended);
   const showResult = ended && !!boardId && activeBoard.current === boardId && seenVictory !== boardId;
   const showResultDialog = showResult && (phase !== 'failed' || readyFailure === boardId);
   const lobby = !!room && !isSolo && !playing && !showResult;
@@ -343,10 +378,6 @@ function App() {
   function stay() {
     setDialog(undefined);
     requestAnimationFrame(() => controls.current?.focus());
-  }
-  function openSettings() {
-    if (room) setSettings(room.settings);
-    setDialog('settings');
   }
   useEffect(() => {
     const back = () => {
@@ -438,8 +469,8 @@ function App() {
         {!isSolo && <span><i className="presence online"/> {activeCount}/4 online</span>}
       </div>}
       <div className="header-actions"><button type="button" className="header-button" aria-pressed={dark} onClick={() => theme(!dark)}>Dark mode</button>
-      <button className="header-button" onClick={room ? openSettings : () => setDialog('profile')}>
-        {room ? <><span aria-hidden="true">⚙</span> Settings</> : <><Avatar profile={profile} size={26}/> My character</>}
+      <button className="header-button" onClick={() => setDialog(room ? 'personal-settings' : 'profile')}>
+        {room ? <><span aria-hidden="true">⚙</span> Personal settings</> : <><Avatar profile={profile} size={26}/> My character</>}
       </button>
       {room && !isSolo && <button type="button" className="header-button" onClick={requestLeave}>Leave room</button>}</div>
     </div></header>
@@ -474,7 +505,7 @@ function App() {
           <div className="code-box"><strong>{room.code}</strong><button onClick={() => void copy(room.code, 'code')}>{copied === 'code' ? 'Copied!' : 'Copy code'}</button></div>
           <div className="invite-link"><input aria-label="Shareable invite link" readOnly value={inviteLink} onFocus={e => e.target.select()}/><button onClick={() => void copy(inviteLink, 'link')}>{copied === 'link' ? 'Copied!' : 'Copy link'}</button></div>
           <div className="lobby-settings"><h2>Puzzle</h2><p>{room.settings.width} × {room.settings.height} · {puzzleLabel(room.settings)}{room.board && !ended ? ' · Ready' : ''}</p>
-            {host && (phase === 'lobby' || ended) && <button onClick={() => { setSettings(room.settings); setDialog('settings'); }}>Change board settings</button>}
+            {canEditBoard && <button onClick={() => { setError(''); setSettings(room.settings); setDialog('board-settings'); }}>Change board settings</button>}
           </div>
           {phase === 'generating' && <div role="status" className="generation"><strong>Generating a puzzle…</strong><progress value={room.progress} max={100}/></div>}
           {(error || room.error) && <p role="alert" className="error">{error || room.error}</p>}
@@ -487,6 +518,7 @@ function App() {
           </div>}
         </section>
         <section className="panel lobby-panel"><h2>Walkers <small>{activeCount}/4</small></h2><Players room={room} id={id}/>
+          {canPassHost && <button type="button" onClick={() => setDialog('pass-host')}>Pass host</button>}
           <button onClick={() => setDialog('profile')}>Edit character</button>
         </section>
       </div>
@@ -517,7 +549,9 @@ function App() {
             <button className="icon" aria-label="Zoom in" onClick={() => controls.current?.camera('in')}>+</button>
           </div><div className="camera-actions"><button onClick={() => controls.current?.camera('fit')}>Fit Board</button>
           <button onClick={() => { controls.current?.camera('center'); controls.current?.focus(); }}>Center on Character</button></div></section>
-          {!isSolo && <section className="panel game-panel game-players"><h2>Walkers</h2><Players room={room} id={id}/></section>}
+          {!isSolo && <section className="panel game-panel game-players"><h2>Walkers</h2><Players room={room} id={id}/>
+            {canPassHost && <button type="button" onClick={() => setDialog('pass-host')}>Pass host</button>}
+          </section>}
         </aside>
       </div>
       {error && connected && <div className="connection-note" role="alert">{error}<button className="icon" aria-label="Dismiss error" onClick={() => setError('')}>×</button></div>}
@@ -552,15 +586,21 @@ function App() {
       <p>Leave the current game and return to the home screen?</p>
       <div className="settings-actions"><button onClick={stay}>Keep playing</button><button className="primary" onClick={leave}>Leave game</button></div>
     </Dialog>}
-    {dialog === 'settings' && room && <Dialog title="Settings" close={() => { setDialog(undefined); controls.current?.focus(); }}>
-      {host && (phase === 'lobby' || ended) && <form onSubmit={event => {
+    {dialog === 'pass-host' && <PassHostDialog players={hostCandidates} enabled={canPassHost} close={stay}
+      pass={playerId => socket.timeout(5000).emitWithAck('room:pass-host', playerId)}/>}
+    {dialog === 'board-settings' && room && <Dialog title="Board settings" close={stay}>
+      {canEditBoard ? <form onSubmit={event => {
         event.preventDefault();
         if (!canStartPicture(settings, room.settings)) return;
         socket.timeout(4000).emit('room:settings', settings, (err, result) => {
           if (!err && result?.ok) setDialog(undefined);
           else feedback(err, result);
         });
-      }}><SettingsFields settings={settings} set={setSettings} saved={room.settings}/><button className="primary full-width" disabled={!connected || !canStartPicture(settings, room.settings)}>Save board settings</button></form>}
+      }}><SettingsFields settings={settings} set={setSettings} saved={room.settings}/><button className="primary full-width" disabled={!connected || !canStartPicture(settings, room.settings)}>Save board settings</button></form>
+        : <p>Board settings are available to the current host between games.</p>}
+      {error && <p className="error" role="alert">{error}</p>}
+    </Dialog>}
+    {dialog === 'personal-settings' && room && <Dialog title="Personal settings" close={stay}>
       <div className="toggles">
         {playing && <label><input type="checkbox" checked={me?.gridOnly ?? false} onChange={e => grid(e.target.checked)}/> Grid movement only</label>}
         <label><input type="checkbox" checked={dark} onChange={e => theme(e.target.checked)}/> Dark mode</label>

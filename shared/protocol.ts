@@ -77,6 +77,7 @@ export interface ToServer {
   'room:join': (data: { code: string; token: string; profile: Profile }, ack: Ack<Identity>) => void;
   'room:leave': (ack: Ack) => void;
   'room:ready': (ack: Ack) => void;
+  'room:pass-host': (playerId: string, ack: Ack) => void;
   'room:settings': (settings: SettingsInput, ack: Ack) => void;
   'room:snapshot': (ack: Ack<Snapshot>) => void;
   'player:profile': (profile: Profile, ack: Ack) => void;

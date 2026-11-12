@@ -62,6 +62,13 @@ describe.runIf(redisTests)('multiplayer across two Redis-backed servers', () => 
     const guestToken = token();
     const joins = await Promise.all([guest, third, fourth].map((client, i) => client.timeout(4000).emitWithAck('room:join', { token: i === 0 ? guestToken : token(), code, profile: { ...defaultProfile, name: 'Guest ' + i } })));
     expect(joins.every(join => join.ok)).toBe(true);
+    const guestId = (joins[0] as { ok: true; value: Identity }).value.id;
+    expect((await guest.timeout(4000).emitWithAck('room:pass-host', guestId)).ok).toBe(false);
+    expect((await host.timeout(4000).emitWithAck('room:pass-host', original.id)).ok).toBe(false);
+    expect((await host.timeout(4000).emitWithAck('room:pass-host', guestId)).ok).toBe(true);
+    expect((await publicRoom(host)).host).toBe(guestId);
+    expect((await host.timeout(4000).emitWithAck('game:start')).ok).toBe(false);
+    expect((await guest.timeout(4000).emitWithAck('room:pass-host', original.id)).ok).toBe(true);
     expect(await extra.timeout(4000).emitWithAck('room:join', { token: token(), code, profile: defaultProfile })).toEqual({ ok: false, error: 'This room is full.' });
     expect((await guest.timeout(4000).emitWithAck('game:start')).ok).toBe(false);
     expect((await host.timeout(4000).emitWithAck('game:start')).ok).toBe(true);

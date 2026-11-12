@@ -143,6 +143,14 @@ export function createGameServer() {
         return full(room);
       });
     }));
+    socket.on('room:pass-host', (playerId, ack) => void answer(ack, async () => {
+      await mutate((room, { player }) => {
+        const next = room.sessions.find(session => session.player.id === playerId)?.player;
+        if (!next?.connected || next.id === player.id) throw new Error('Choose another connected player.');
+        room.host = next.id;
+        return full(room);
+      }, true);
+    }));
     socket.on('player:profile', (data, ack) => void answer(ack, async () => {
       const profile = profileOf(data);
       if (!allowBoardInput()) throw new Error('Too many player updates.');
